@@ -987,57 +987,167 @@ export function attachGuard(client) {
     }
   });
 
-  // —— CHANNELS / ROOMS ——
-  client.on("channelCreate", async (channel) => {
-    if (!channel.guild || channel.guild.id !== GUILD_ID) return;
-    const audit = await getExecutor(channel.guild, AuditLogEvent.ChannelCreate, channel.id);
-    const ex = audit?.executor || null;
+  // —— CHANNELS / ROOMS (Nova-style) ——
+  function channelTypeLabel(type) {
+    const map = {
+      [ChannelType.GuildText]: "Text Channel",
+      [ChannelType.GuildVoice]: "Voice Channel",
+      [ChannelType.GuildCategory]: "Category",
+      [ChannelType.GuildAnnouncement]: "Announcement Channel",
+      [ChannelType.GuildStageVoice]: "Stage Channel",
+      [ChannelType.GuildForum]: "Forum Channel",
+    };
+    return map[type] || ChannelType[type] || String(type);
+  }
+
+  function roomInfoBlock(channel) {
+    const mention =
+      channel.type === ChannelType.GuildCategory
+        ? `\`${channel.name}\``
+        : `<#${channel.id}>`;
+    return [
+      "**معلومات الروم المحدثة**",
+      `الروم: ${mention}`,
+      `الاسم: \`${channel.name}\``,
+      `النوع: \`${channelTypeLabel(channel.type)}\``,
+    ].join("\n");
+  }
+
+  function roomAdminBlock(admin) {
+    return [
+      "**تم التحديث بواسطة**",
+      `الادمن: ${admin ? `<@${admin.id}>` : "غير معروف"}`,
+      `مُعرّف الادمن: \`${admin?.id || "—"}\``,
+    ].join("\n");
+  }
+
+  async function sendRoomUpdateLog({
+    channel,
+    admin,
+    changeTitle,
+    changeLines,
+  }) {
     await sendLog(
       client,
       "rooms",
-      baseEmbed(0x57f287, "📁 إنشاء روم").setDescription(
-        [
-          describeAction(ex?.id, "أنشأ روم"),
-          `**الروم:** <#${channel.id}> (\`${channel.name}\`)`,
-          `**النوع:** ${ChannelType[channel.type] || channel.type}`,
-        ].join("\n"),
-      ),
+      new EmbedBuilder()
+        .setColor(0xed4245)
+        .setTitle(`🔄 تم تحديث الروم | ${channel.name}`)
+        .setDescription(
+          [
+            roomInfoBlock(channel),
+            "",
+            roomAdminBlock(admin),
+            "",
+            "**وقت التحديث**",
+            `\`${formatLogTime()}\``,
+            "",
+            `**${changeTitle}**`,
+            ...changeLines,
+          ].join("\n"),
+        )
+        .setFooter({ text: "codeX · Rooms" })
+        .setTimestamp(),
+    );
+  }
+
+  client.on("channelCreate", async (channel) => {
+    if (!channel.guild || channel.guild.id !== GUILD_ID) return;
+    const audit = await getExecutor(
+      channel.guild,
+      AuditLogEvent.ChannelCreate,
+      channel.id,
+    );
+    const admin = audit?.executor || null;
+    await sendLog(
+      client,
+      "rooms",
+      new EmbedBuilder()
+        .setColor(0x57f287)
+        .setTitle(`📁 تم إنشاء روم | ${channel.name}`)
+        .setDescription(
+          [
+            roomInfoBlock(channel),
+            "",
+            roomAdminBlock(admin),
+            "",
+            "**وقت الإنشاء**",
+            `\`${formatLogTime()}\``,
+          ].join("\n"),
+        )
+        .setFooter({ text: "codeX · Rooms" })
+        .setTimestamp(),
     );
   });
 
   client.on("channelDelete", async (channel) => {
     if (!channel.guild || channel.guild.id !== GUILD_ID) return;
-    const audit = await getExecutor(channel.guild, AuditLogEvent.ChannelDelete, channel.id);
-    const ex = audit?.executor || null;
+    const audit = await getExecutor(
+      channel.guild,
+      AuditLogEvent.ChannelDelete,
+      channel.id,
+    );
+    const admin = audit?.executor || null;
     await sendLog(
       client,
       "rooms",
-      baseEmbed(0xed4245, "💥 حذف روم").setDescription(
-        [
-          describeAction(ex?.id, "حذف روم"),
-          `**الروم:** \`${channel.name}\``,
-        ].join("\n"),
-      ),
+      new EmbedBuilder()
+        .setColor(0xed4245)
+        .setTitle(`💥 تم حذف روم | ${channel.name}`)
+        .setDescription(
+          [
+            "**معلومات الروم**",
+            `الاسم: \`${channel.name}\``,
+            `النوع: \`${channelTypeLabel(channel.type)}\``,
+            `الآيدي: \`${channel.id}\``,
+            "",
+            roomAdminBlock(admin),
+            "",
+            "**وقت الحذف**",
+            `\`${formatLogTime()}\``,
+          ].join("\n"),
+        )
+        .setFooter({ text: "codeX · Rooms" })
+        .setTimestamp(),
     );
     await sendLog(
       client,
       "important",
       baseEmbed(0xed4245, "🚨 حذف روم").setDescription(
-        `تم حذف \`${channel.name}\` بواسطة ${ex ? `<@${ex.id}>` : "—"}`,
+        `تم حذف \`${channel.name}\` بواسطة ${admin ? `<@${admin.id}>` : "—"}`,
       ),
     );
   });
 
   client.on("channelUpdate", async (oldCh, newCh) => {
     if (!newCh.guild || newCh.guild.id !== GUILD_ID) return;
-    // Ignore log-channel noise from our own bot edits when possible
     if (Object.values(LOG_CHANNELS).includes(newCh.id)) return;
 
     const nameChanged = oldCh.name !== newCh.name;
     const topicChanged = (oldCh.topic || "") !== (newCh.topic || "");
+    const parentChanged = oldCh.parentId !== newCh.parentId;
+    const nsfwChanged = Boolean(oldCh.nsfw) !== Boolean(newCh.nsfw);
+    const slowChanged =
+      (oldCh.rateLimitPerUser || 0) !== (newCh.rateLimitPerUser || 0);
+    const limitChanged =
+      (oldCh.userLimit ?? null) !== (newCh.userLimit ?? null);
+    const bitrateChanged =
+      (oldCh.bitrate ?? null) !== (newCh.bitrate ?? null);
     const overwriteDiff = diffOverwrites(oldCh, newCh);
     const permsChanged = overwriteDiff.length > 0;
-    if (!nameChanged && !topicChanged && !permsChanged) return;
+
+    if (
+      !nameChanged &&
+      !topicChanged &&
+      !parentChanged &&
+      !nsfwChanged &&
+      !slowChanged &&
+      !limitChanged &&
+      !bitrateChanged &&
+      !permsChanged
+    ) {
+      return;
+    }
 
     if (permsChanged) {
       let audit = null;
@@ -1056,7 +1166,6 @@ export function attachGuard(client) {
         );
       }
       const ex = audit?.executor || null;
-      // Skip pure bot self-noise unless someone else did it
       if (ex?.id === client.user.id && overwriteDiff.length === 0) return;
 
       const affected = audit?.entry?.extra;
@@ -1094,25 +1203,88 @@ export function attachGuard(client) {
       );
     }
 
+    const roomChanges = [];
     if (nameChanged) {
-      const audit = await getExecutor(
-        newCh.guild,
-        AuditLogEvent.ChannelUpdate,
-        newCh.id,
-        { windowMs: 60_000 },
-      );
-      const ex = audit?.executor || null;
-      await sendLog(
-        client,
-        "rooms",
-        baseEmbed(0x5865f2, "📝 إعادة تسمية روم").setDescription(
-          [
-            `**الفاعل:** ${ex ? `<@${ex.id}> (\`${ex.tag}\`)` : "غير معروف"}`,
-            `**الإجراء:** أعاد تسمية روم`,
-            `\`${oldCh.name}\` → \`${newCh.name}\``,
-          ].join("\n"),
-        ),
-      );
+      roomChanges.push({
+        title: "تحديث اسم الروم",
+        lines: [
+          `الاسم القديم: \`${oldCh.name}\``,
+          `الاسم الجديد: \`${newCh.name}\``,
+        ],
+      });
+    }
+    if (limitChanged) {
+      roomChanges.push({
+        title: "تحديث حد المستخدمين لروم الصوت",
+        lines: [
+          `حد المستخدمين القديم: \`${oldCh.userLimit || 0}\``,
+          `حد المستخدمين الجديد: \`${newCh.userLimit || 0}\``,
+        ],
+      });
+    }
+    if (bitrateChanged) {
+      roomChanges.push({
+        title: "تحديث جودة الصوت",
+        lines: [
+          `البتريت القديم: \`${oldCh.bitrate || "—"}\``,
+          `البتريت الجديد: \`${newCh.bitrate || "—"}\``,
+        ],
+      });
+    }
+    if (topicChanged) {
+      roomChanges.push({
+        title: "تحديث وصف الروم",
+        lines: [
+          `الوصف القديم: \`${clip(oldCh.topic || "—", 180)}\``,
+          `الوصف الجديد: \`${clip(newCh.topic || "—", 180)}\``,
+        ],
+      });
+    }
+    if (parentChanged) {
+      roomChanges.push({
+        title: "تحديث تصنيف الروم",
+        lines: [
+          `التصنيف القديم: \`${oldCh.parentId || "—"}\``,
+          `التصنيف الجديد: \`${newCh.parentId || "—"}\``,
+        ],
+      });
+    }
+    if (nsfwChanged) {
+      roomChanges.push({
+        title: "تحديث NSFW",
+        lines: [
+          `السابق: \`${oldCh.nsfw ? "نعم" : "لا"}\``,
+          `الجديد: \`${newCh.nsfw ? "نعم" : "لا"}\``,
+        ],
+      });
+    }
+    if (slowChanged) {
+      roomChanges.push({
+        title: "تحديث الوضع البطيء",
+        lines: [
+          `السابق: \`${oldCh.rateLimitPerUser || 0}s\``,
+          `الجديد: \`${newCh.rateLimitPerUser || 0}s\``,
+        ],
+      });
+    }
+
+    if (!roomChanges.length) return;
+
+    const audit = await getExecutor(
+      newCh.guild,
+      AuditLogEvent.ChannelUpdate,
+      newCh.id,
+      { windowMs: 60_000 },
+    );
+    const admin = audit?.executor || null;
+
+    for (const change of roomChanges) {
+      await sendRoomUpdateLog({
+        channel: newCh,
+        admin,
+        changeTitle: change.title,
+        changeLines: change.lines,
+      });
     }
   });
 
