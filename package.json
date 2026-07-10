@@ -7,8 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "bot": "node scripts/codex-delivery-bot.mjs",
-    "rmz-bridge": "node scripts/rmz-orders-bridge.mjs"
+    "bot": "node scripts/codex-delivery-bot.mjs"
   },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.2",
