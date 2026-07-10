@@ -5,6 +5,7 @@ import {
   EmbedBuilder,
   AuditLogEvent,
   PermissionFlagsBits,
+  PermissionsBitField,
   ChannelType,
 } from "discord.js";
 
@@ -181,6 +182,16 @@ async function getExecutor(guild, typeOrTypes, targetId, { windowMs = 30_000 } =
 }
 
 /** Diff channel overwrites → human summary */
+function formatPermBits(bitfield) {
+  try {
+    const arr = new PermissionsBitField(BigInt(bitfield || 0)).toArray();
+    if (!arr.length) return "لا شيء";
+    return arr.slice(0, 15).join(", ") + (arr.length > 15 ? "…" : "");
+  } catch {
+    return String(bitfield || "—");
+  }
+}
+
 function diffOverwrites(oldCh, newCh) {
   const oldMap = oldCh.permissionOverwrites?.cache;
   const newMap = newCh.permissionOverwrites?.cache;
@@ -199,14 +210,30 @@ function diffOverwrites(oldCh, newCh) {
         id,
         kind: "أضاف صلاحيات",
         type: Number(n.type),
+        oldAllow: null,
+        newAllow: nAllow,
+        oldDeny: null,
+        newDeny: nDeny,
       });
     } else if (o && !n) {
-      changes.push({ id, kind: "حذف صلاحيات", type: Number(o.type) });
+      changes.push({
+        id,
+        kind: "حذف صلاحيات",
+        type: Number(o.type),
+        oldAllow: oAllow,
+        newAllow: null,
+        oldDeny: oDeny,
+        newDeny: null,
+      });
     } else if (o && n && (oAllow !== nAllow || oDeny !== nDeny)) {
       changes.push({
         id,
         kind: "عدّل صلاحيات",
         type: Number(n.type),
+        oldAllow: oAllow,
+        newAllow: nAllow,
+        oldDeny: oDeny,
+        newDeny: nDeny,
       });
     }
   }
@@ -1281,42 +1308,52 @@ export function attachGuard(client) {
           { windowMs: 90_000 },
         );
       }
-      const ex = audit?.executor || null;
-      if (ex?.id === client.user.id && overwriteDiff.length === 0) return;
+      const admin = audit?.executor || null;
+      if (admin?.id === client.user.id && overwriteDiff.length === 0) return;
 
-      const affected = audit?.entry?.extra;
-      let affectedLabel = null;
-      if (affected?.name) {
-        affectedLabel = `**على رتبة:** \`${affected.name}\``;
-      } else if (affected?.userId) {
-        affectedLabel = `**على عضو:** <@${affected.userId}>`;
-      } else if (affected?.id) {
-        affectedLabel = `**على:** <@&${affected.id}> / <@${affected.id}>`;
+      for (const c of overwriteDiff.slice(0, 6)) {
+        const who = c.type === 0 ? `<@&${c.id}>` : `<@${c.id}>`;
+        const whoLabel = c.type === 0 ? "رتبة" : "عضو";
+        const changeLines = [
+          `الإجراء: \`${c.kind}\``,
+          `المستهدف (${whoLabel}): ${who}`,
+        ];
+        if (c.oldAllow !== c.newAllow) {
+          changeLines.push(
+            `السماح السابق: \`${formatPermBits(c.oldAllow)}\``,
+            `السماح الجديد: \`${formatPermBits(c.newAllow)}\``,
+          );
+        }
+        if (c.oldDeny !== c.newDeny) {
+          changeLines.push(
+            `المنع السابق: \`${formatPermBits(c.oldDeny)}\``,
+            `المنع الجديد: \`${formatPermBits(c.newDeny)}\``,
+          );
+        }
+
+        await sendLog(
+          client,
+          "permissions",
+          new EmbedBuilder()
+            .setColor(0xed4245)
+            .setTitle(`🔄 تم تحديث الروم | ${newCh.name}`)
+            .setDescription(
+              [
+                roomInfoBlock(newCh),
+                "",
+                roomAdminBlock(admin),
+                "",
+                "**وقت التحديث**",
+                `\`${formatLogTime()}\``,
+                "",
+                "**تحديث صلاحيات الروم**",
+                ...changeLines,
+              ].join("\n"),
+            )
+            .setFooter({ text: "codeX · Permissions" })
+            .setTimestamp(),
+        );
       }
-
-      const detail = overwriteDiff
-        .slice(0, 8)
-        .map((c) => {
-          const who = c.type === 0 ? `<@&${c.id}>` : `<@${c.id}>`;
-          return `• ${c.kind} → ${who}`;
-        })
-        .join("\n");
-
-      await sendLog(
-        client,
-        "permissions",
-        baseEmbed(0xf0b232, "🔐 تحديث صلاحيات روم").setDescription(
-          [
-            `**الفاعل:** ${ex ? `<@${ex.id}> (\`${ex.tag}\`)` : "غير معروف"}`,
-            `**الإجراء:** عدّل صلاحيات روم`,
-            `**الروم:** <#${newCh.id}> (\`${newCh.name}\`)`,
-            affectedLabel,
-            detail ? `**التفاصيل:**\n${detail}` : null,
-          ]
-            .filter(Boolean)
-            .join("\n"),
-        ),
-      );
     }
 
     const roomChanges = [];
