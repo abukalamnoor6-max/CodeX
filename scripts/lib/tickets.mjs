@@ -21,6 +21,12 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { LOG_CHANNELS } from "./guard.mjs";
+import {
+  handleAiHumanButton,
+  silenceAiOnClaim,
+  parseTopic as parseAiTopic,
+  buildTopic as buildAiTopic,
+} from "./ticket-ai.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "../..");
@@ -76,20 +82,11 @@ function bannerUrl() {
 }
 
 function parseTopic(topic = "") {
-  const owner = (topic.match(/owner:(\d{15,20})/) || [])[1] || null;
-  const type = (topic.match(/type:([a-z]+)/) || [])[1] || "inquiry";
-  const claimed = (topic.match(/claimed:(\d{15,20})/) || [])[1] || null;
-  return { owner, type, claimed };
+  return parseAiTopic(topic);
 }
 
-function buildTopic({ type, owner, claimed }) {
-  return [
-    `type:${type}`,
-    `owner:${owner}`,
-    claimed ? `claimed:${claimed}` : null,
-  ]
-    .filter(Boolean)
-    .join(" | ");
+function buildTopic({ type, owner, claimed, ai = "on" }) {
+  return buildAiTopic({ type, owner, claimed, ai });
 }
 
 function isStaffMember(member) {
@@ -310,6 +307,7 @@ export async function openTicket(interaction, typeKey) {
       type: type.value,
       owner: interaction.user.id,
       claimed: null,
+      ai: "on",
     }),
     permissionOverwrites: ticketOverwrites(guild, interaction.user.id, me.id),
     reason: `codeX ticket: ${type.label}`,
@@ -331,7 +329,10 @@ export async function openTicket(interaction, typeKey) {
   });
 
   await channel.send({
-    content: `<@${interaction.user.id}> اكتب تفاصيل طلبك هنا، والفريق بيرد عليك قريباً.`,
+    content: [
+      `<@${interaction.user.id}> اكتب تفاصيل طلبك هنا.`,
+      "المساعد الذكي بيرد عليك أولاً — وإذا احتجت موظف اضغط **تحويل لدعم بشري**.",
+    ].join("\n"),
     allowedMentions: { users: [interaction.user.id] },
   });
 
@@ -404,8 +405,14 @@ async function claimTicket(interaction) {
       type: meta.type,
       owner: meta.owner,
       claimed: interaction.user.id,
+      ai: "off",
     }),
   );
+
+  await silenceAiOnClaim(channel, {
+    ...meta,
+    claimed: interaction.user.id,
+  });
 
   const opener = meta.owner
     ? await interaction.client.users.fetch(meta.owner).catch(() => interaction.user)
@@ -706,6 +713,10 @@ export function attachTickets(client) {
 
       if (id.startsWith("codex_ticket_claim:")) {
         await claimTicket(interaction);
+        return;
+      }
+      if (id.startsWith("codex_ticket_ai_human:")) {
+        await handleAiHumanButton(interaction);
         return;
       }
       if (id.startsWith("codex_ticket_add:")) {

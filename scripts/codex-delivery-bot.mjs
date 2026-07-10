@@ -23,6 +23,7 @@ import {
 } from "./lib/welcome.mjs";
 import { attachTickets, postTicketPanel } from "./lib/tickets.mjs";
 import { attachDividerCommand } from "./lib/divider-command.mjs";
+import { attachTicketAi } from "./lib/ticket-ai.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -118,6 +119,7 @@ const client = new Client({
 
 attachGuard(client);
 attachTickets(client);
+attachTicketAi(client);
 attachDividerCommand(client);
 
 client.on("guildMemberAdd", async (member) => {
