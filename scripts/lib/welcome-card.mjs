@@ -1,4 +1,5 @@
-import { createCanvas, loadImage } from "@napi-rs/canvas";
+import { createCanvas, loadImage, GlobalFonts } from "@napi-rs/canvas";
+import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -7,6 +8,79 @@ const ROOT = path.resolve(__dirname, "../..");
 
 const W = 1100;
 const H = 400;
+
+const FONT_REGULAR = "CodeXArabic";
+const FONT_BOLD = "CodeXArabicBold";
+let fontsReady = false;
+
+function registerArabicFonts() {
+  if (fontsReady) return true;
+
+  const files = [
+    {
+      path: path.join(ROOT, "public", "fonts", "NotoSansArabic-Regular.ttf"),
+      name: FONT_REGULAR,
+    },
+    {
+      path: path.join(ROOT, "public", "fonts", "NotoSansArabic-Bold.ttf"),
+      name: FONT_BOLD,
+    },
+    {
+      path: "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
+      name: FONT_REGULAR,
+    },
+    {
+      path: "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf",
+      name: FONT_BOLD,
+    },
+    {
+      path: "/usr/share/fonts/truetype/amiri/Amiri-Regular.ttf",
+      name: FONT_REGULAR,
+    },
+    {
+      path: "/usr/share/fonts/truetype/amiri/Amiri-Bold.ttf",
+      name: FONT_BOLD,
+    },
+  ];
+
+  const got = new Set();
+  for (const f of files) {
+    if (got.has(f.name)) continue;
+    try {
+      if (!fs.existsSync(f.path)) continue;
+      GlobalFonts.registerFromPath(f.path, f.name);
+      got.add(f.name);
+    } catch (e) {
+      console.warn("font register failed", f.path, e.message);
+    }
+  }
+
+  if (!got.has(FONT_REGULAR)) {
+    console.warn(
+      "No Arabic font found — welcome card text may render as boxes",
+    );
+    return false;
+  }
+
+  // If bold missing, reuse regular for bold requests
+  if (!got.has(FONT_BOLD) && got.has(FONT_REGULAR)) {
+    try {
+      const reg = files.find(
+        (x) => x.name === FONT_REGULAR && fs.existsSync(x.path),
+      );
+      if (reg) GlobalFonts.registerFromPath(reg.path, FONT_BOLD);
+    } catch {}
+  }
+
+  fontsReady = true;
+  return true;
+}
+
+function font(weight, size) {
+  registerArabicFonts();
+  const family = weight === "bold" ? FONT_BOLD : FONT_REGULAR;
+  return `${size}px "${family}", "Noto Sans Arabic", "Segoe UI", Tahoma, sans-serif`;
+}
 
 function drawStar(ctx, x, y, outerR, innerR, fill) {
   ctx.save();
@@ -54,6 +128,8 @@ export async function renderWelcomeCard({
   avatarUrl,
   memberCount,
 }) {
+  registerArabicFonts();
+
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext("2d");
 
@@ -164,24 +240,24 @@ export async function renderWelcomeCard({
     // optional
   }
 
-  // Text
+  // Text — Arabic font registered for Railway/Linux
   ctx.textAlign = "right";
   ctx.direction = "rtl";
 
   ctx.fillStyle = "#f5f5f5";
-  ctx.font = "bold 40px Segoe UI, Tahoma, Arial";
+  ctx.font = font("bold", 40);
   ctx.fillText("أهلاً بك في codeX", W - 64, 120);
 
   const name = displayName || username || "عضو جديد";
   ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 34px Segoe UI, Tahoma, Arial";
+  ctx.font = font("bold", 34);
   ctx.fillText(fitText(ctx, name, 680), W - 64, 175);
 
   ctx.fillStyle = "rgba(210,210,220,0.9)";
-  ctx.font = "22px Segoe UI, Tahoma, Arial";
+  ctx.font = font("normal", 22);
   ctx.fillText(`@${fitText(ctx, username || "", 560)}`, W - 64, 215);
 
-  ctx.font = "24px Segoe UI, Tahoma, Arial";
+  ctx.font = font("normal", 24);
   ctx.fillStyle = "rgba(230,230,235,0.95)";
   const lines = [
     "نورت السيرفر",
