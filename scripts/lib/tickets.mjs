@@ -543,25 +543,22 @@ async function alertCustomer(interaction) {
   });
 }
 
-export async function closeTicket(interaction) {
-  const channel = interaction.channel;
-  if (!channel || channel.type !== ChannelType.GuildText) return;
+export async function closeTicketByChannel({
+  channel,
+  client,
+  closedBy,
+  notifyChannel = true,
+}) {
+  if (!channel || channel.type !== ChannelType.GuildText) return false;
 
   const meta = parseTopic(channel.topic || "");
-  const isOwner = meta.owner && interaction.user.id === meta.owner;
-  const staff = isStaffMember(interaction.member);
 
-  if (!isOwner && !staff) {
-    await interaction.reply({
-      content: "ما تقدر تغلق هالتذكرة.",
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
+  if (notifyChannel) {
+    await channel
+      .send({ content: "جاري حفظ الأرشيف وإغلاق التذكرة…" })
+      .catch(() => {});
   }
 
-  await interaction.reply({ content: "جاري حفظ الأرشيف وإغلاق التذكرة…" });
-
-  // Build full transcript before delete
   let transcriptFile = null;
   try {
     const lines = [
@@ -573,7 +570,7 @@ export async function closeTicket(interaction) {
       `النوع: ${meta.type || "—"}`,
       `صاحب التذكرة: ${meta.owner || "—"}`,
       `المسؤول: ${meta.claimed || "—"}`,
-      `أُغلقت بواسطة: ${interaction.user.tag} (${interaction.user.id})`,
+      `أُغلقت بواسطة: ${closedBy?.tag || closedBy?.username || "unknown"} (${closedBy?.id || "?"})`,
       `التاريخ: ${new Date().toISOString()}`,
       "========================================",
       "",
@@ -606,9 +603,7 @@ export async function closeTicket(interaction) {
                 const parts = [
                   e.title ? `عنوان: ${e.title}` : null,
                   e.description ? `وصف: ${e.description}` : null,
-                  ...(e.fields || []).map(
-                    (f) => `${f.name}: ${f.value}`,
-                  ),
+                  ...(e.fields || []).map((f) => `${f.name}: ${f.value}`),
                 ].filter(Boolean);
                 return parts.length
                   ? `[embed ${idx + 1}]\n${parts.join("\n")}`
@@ -632,7 +627,9 @@ export async function closeTicket(interaction) {
     }
 
     const buf = Buffer.from(lines.join("\n"), "utf8");
-    const safeName = channel.name.replace(/[^\w\u0600-\u06ff-]+/g, "_").slice(0, 40);
+    const safeName = channel.name
+      .replace(/[^\w\u0600-\u06ff-]+/g, "_")
+      .slice(0, 40);
     transcriptFile = new AttachmentBuilder(buf, {
       name: `ticket-${safeName}-${Date.now()}.txt`,
     });
@@ -641,14 +638,14 @@ export async function closeTicket(interaction) {
   }
 
   await sendTicketLog(
-    interaction.client,
+    client,
     new EmbedBuilder()
       .setColor(0x95a5a6)
       .setTitle("🔒 إغلاق تذكرة + أرشيف")
       .setDescription(
         [
           `**الروم:** \`${channel.name}\``,
-          `**أغلقها:** <@${interaction.user.id}>`,
+          closedBy?.id ? `**أغلقها:** <@${closedBy.id}>` : null,
           meta.owner ? `**صاحب التذكرة:** <@${meta.owner}>` : null,
           meta.claimed ? `**المسؤول:** <@${meta.claimed}>` : null,
           transcriptFile ? "**الأرشيف:** مرفق تحت ⬇️" : "**الأرشيف:** فشل الحفظ",
@@ -661,7 +658,7 @@ export async function closeTicket(interaction) {
 
   if (transcriptFile) {
     try {
-      const logCh = await interaction.client.channels.fetch(LOG_CHANNELS.tickets);
+      const logCh = await client.channels.fetch(LOG_CHANNELS.tickets);
       if (logCh?.isTextBased?.()) {
         await logCh.send({
           content: `📄 أرشيف تذكرة \`${channel.name}\``,
@@ -684,6 +681,34 @@ export async function closeTicket(interaction) {
       console.warn("ticket delete failed", e.message);
     }
   }, 4000);
+
+  return true;
+}
+
+export async function closeTicket(interaction) {
+  const channel = interaction.channel;
+  if (!channel || channel.type !== ChannelType.GuildText) return;
+
+  const meta = parseTopic(channel.topic || "");
+  const isOwner = meta.owner && interaction.user.id === meta.owner;
+  const staff = isStaffMember(interaction.member);
+
+  if (!isOwner && !staff) {
+    await interaction.reply({
+      content: "ما تقدر تغلق هالتذكرة.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  await interaction.reply({ content: "جاري حفظ الأرشيف وإغلاق التذكرة…" });
+
+  await closeTicketByChannel({
+    channel,
+    client: interaction.client,
+    closedBy: interaction.user,
+    notifyChannel: false,
+  });
 }
 
 export function attachTickets(client) {

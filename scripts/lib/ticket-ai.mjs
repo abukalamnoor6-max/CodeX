@@ -148,10 +148,12 @@ function buildSystemPrompt(ticketType) {
     "8) لأي تفاصيل زيادة: اقترح الزر فقط. التحويل الفعلي بالزر فقط، مو تلقائي. لا تختلق تفاصيل.",
     "",
     "أجب دائماً بصيغة JSON فقط:",
-    '{"reply":"نص الرد للعميل بالعربية","suggest_human":false}',
+    '{"reply":"نص الرد للعميل بالعربية","suggest_human":false,"close_ticket":false}',
     "",
     "إذا التفاصيل زيادة أو مو متأكد: اكتب في reply إن الأفضل الضغط على زر «تحويل لدعم بشري» — لكن لا تجبر التحويل.",
     "ضع suggest_human=true فقط كتذكير داخلي؛ التحويل الفعلي يتم بالزر فقط.",
+    "إذا طلب العميل إغلاق/سكّر/اقفل التذكرة بوضوح: close_ticket=true واكتب في reply تأكيد قصير أنك راح تسكرها.",
+    "لا تغلق التذكرة من نفسك بدون طلب صريح من العميل.",
     "لا تذكر JSON للعميل.",
     "",
     "=== قاعدة المعرفة ===",
@@ -236,6 +238,19 @@ async function escalateTicket(channel, meta, reason, triggeredBy) {
   } catch {}
 }
 
+function wantsCloseTicket(text = "", llmFlag = false) {
+  if (llmFlag) return true;
+  const t = String(text).toLowerCase();
+  return (
+    /سك+ر\s*التذك|اقفل\s*التذك|اغلق\s*التذك|أغلق\s*التذك|سكر\s*التكت|سكّر|اقفلها|اغلقها|أغلقها|close\s*ticket|close\s*the\s*ticket/i.test(
+      t,
+    ) ||
+    /^(سكر|سكّر|اقفل|اغلق|أغلق|close)\s*(التذكرة|التكت|ticket)?\s*[.!؟]?$/i.test(
+      t.trim(),
+    )
+  );
+}
+
 async function replyWithAi(message) {
   const channel = message.channel;
   if (typingLocks.has(channel.id)) return;
@@ -257,14 +272,28 @@ async function replyWithAi(message) {
     const result = await callLlm({ system, messages: history });
 
     const reply = String(result?.reply || "").trim().slice(0, 1900);
-    // ignore model escalate flags — transfer is button-only
-    void result?.escalate;
-    void result?.suggest_human;
-    void result?.reason;
+    const closeTicket =
+      wantsCloseTicket(message.content, Boolean(result?.close_ticket));
 
     const freshChannel = await channel.fetch();
     const fresh = parseTopic(freshChannel.topic || channel.topic || "");
     if (fresh.claimed || fresh.ai === "off" || fresh.ai === "escalated") return;
+
+    if (closeTicket) {
+      await channel.send({
+        content:
+          reply ||
+          "تمام، راح أسكر التذكرة الآن. شكراً لتواصلك مع codeX.",
+      });
+      const { closeTicketByChannel } = await import("./tickets.mjs");
+      await closeTicketByChannel({
+        channel,
+        client: message.client,
+        closedBy: message.author,
+        notifyChannel: false,
+      });
+      return;
+    }
 
     if (reply) {
       await channel.send({
@@ -272,9 +301,6 @@ async function replyWithAi(message) {
         components: [humanRequestRow(meta.owner)],
       });
     }
-
-    // Soft suggest only — never force escalate from the model.
-    // Real transfer happens when the user/staff clicks «تحويل لدعم بشري».
   } catch (e) {
     console.warn("ticket AI failed", e.message);
     try {
