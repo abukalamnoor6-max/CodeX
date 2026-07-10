@@ -452,41 +452,83 @@ export function attachGuard(client) {
     );
   });
 
-  // —— BAN / UNBAN ——
+  // —— BAN / UNBAN (Nova-style) ——
   client.on("guildBanAdd", async (ban) => {
     if (ban.guild.id !== GUILD_ID) return;
-    const audit = await getExecutor(ban.guild, AuditLogEvent.MemberBanAdd, ban.user.id);
-    const ex = audit?.executor || null;
+    const audit = await getExecutor(
+      ban.guild,
+      AuditLogEvent.MemberBanAdd,
+      ban.user.id,
+    );
+    const admin = audit?.executor || null;
+    const reason =
+      (audit?.reason || ban.reason || "").trim() || "لم يتم تقديم سبب";
+    const username = ban.user.username || ban.user.tag || "—";
+
     await sendLog(
       client,
       "ban",
-      baseEmbed(0xed4245, "🔨 بان").setDescription(
-        [
-          `**العضو:** <@${ban.user.id}> (\`${ban.user.tag}\`)`,
-          `**بواسطة:** ${ex ? `<@${ex.id}> (\`${ex.tag}\`)` : "—"}`,
-          `**الإجراء:** حظر عضو`,
-          ban.reason ? `**السبب:** ${clip(ban.reason)}` : null,
-        ]
-          .filter(Boolean)
-          .join("\n"),
-      ),
+      new EmbedBuilder()
+        .setColor(0xed4245)
+        .setTitle(`✈️ تم حظره من السيرفر \`${username}\``)
+        .setThumbnail(ban.user.displayAvatarURL({ size: 256 }))
+        .setDescription(
+          [
+            "**معلومات العضو**",
+            `العضو: <@${ban.user.id}>`,
+            `اسم العضو: \`${username}\``,
+            `مُعرّف العضو: \`( ${ban.user.id} )\``,
+            "",
+            "**السبب**",
+            `\`${clip(reason, 500)}\``,
+            "",
+            "**الادمن**",
+            `الادمن: ${admin ? `<@${admin.id}>` : "غير معروف"}`,
+            `مُعرّف الادمن: \`( ${admin?.id || "—"} )\``,
+            "",
+            "**التوقيت**",
+            `\`${formatLogTime()}\``,
+          ].join("\n"),
+        )
+        .setFooter({ text: "codeX · Ban" })
+        .setTimestamp(),
     );
   });
 
   client.on("guildBanRemove", async (ban) => {
     if (ban.guild.id !== GUILD_ID) return;
-    const audit = await getExecutor(ban.guild, AuditLogEvent.MemberBanRemove, ban.user.id);
-    const ex = audit?.executor || null;
+    const audit = await getExecutor(
+      ban.guild,
+      AuditLogEvent.MemberBanRemove,
+      ban.user.id,
+    );
+    const admin = audit?.executor || null;
+    const username = ban.user.username || ban.user.tag || "—";
+
     await sendLog(
       client,
       "ban",
-      baseEmbed(0x57f287, "✅ فك بان").setDescription(
-        [
-          `**العضو:** <@${ban.user.id}> (\`${ban.user.tag}\`)`,
-          `**بواسطة:** ${ex ? `<@${ex.id}> (\`${ex.tag}\`)` : "—"}`,
-          `**الإجراء:** فك حظر`,
-        ].join("\n"),
-      ),
+      new EmbedBuilder()
+        .setColor(0x57f287)
+        .setTitle(`✅ تم فك الحظر عن \`${username}\``)
+        .setThumbnail(ban.user.displayAvatarURL({ size: 256 }))
+        .setDescription(
+          [
+            "**معلومات العضو**",
+            `العضو: <@${ban.user.id}>`,
+            `اسم العضو: \`${username}\``,
+            `مُعرّف العضو: \`( ${ban.user.id} )\``,
+            "",
+            "**الادمن**",
+            `الادمن: ${admin ? `<@${admin.id}>` : "غير معروف"}`,
+            `مُعرّف الادمن: \`( ${admin?.id || "—"} )\``,
+            "",
+            "**التوقيت**",
+            `\`${formatLogTime()}\``,
+          ].join("\n"),
+        )
+        .setFooter({ text: "codeX · Unban" })
+        .setTimestamp(),
     );
   });
 
