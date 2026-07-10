@@ -552,25 +552,119 @@ export async function closeTicket(interaction) {
     return;
   }
 
-  await interaction.reply({ content: "جاري إغلاق التذكرة خلال ثوانٍ…" });
+  await interaction.reply({ content: "جاري حفظ الأرشيف وإغلاق التذكرة…" });
+
+  // Build full transcript before delete
+  let transcriptFile = null;
+  try {
+    const lines = [
+      "========================================",
+      "         codeX — أرشيف تذكرة",
+      "========================================",
+      `الروم: #${channel.name}`,
+      `آيدي الروم: ${channel.id}`,
+      `النوع: ${meta.type || "—"}`,
+      `صاحب التذكرة: ${meta.owner || "—"}`,
+      `المسؤول: ${meta.claimed || "—"}`,
+      `أُغلقت بواسطة: ${interaction.user.tag} (${interaction.user.id})`,
+      `التاريخ: ${new Date().toISOString()}`,
+      "========================================",
+      "",
+    ];
+
+    const collected = [];
+    let lastId;
+    for (let i = 0; i < 20; i++) {
+      const batch = await channel.messages.fetch({
+        limit: 100,
+        ...(lastId ? { before: lastId } : {}),
+      });
+      if (!batch.size) break;
+      collected.push(...batch.values());
+      lastId = batch.last().id;
+      if (batch.size < 100) break;
+    }
+    collected.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+
+    for (const m of collected) {
+      const time = new Date(m.createdTimestamp).toLocaleString("ar-SA", {
+        timeZone: "Asia/Riyadh",
+      });
+      const author = `${m.author?.tag || "unknown"} (${m.author?.id || "?"})`;
+      const content = m.content || "";
+      const embeds =
+        m.embeds?.length
+          ? m.embeds
+              .map((e, idx) => {
+                const parts = [
+                  e.title ? `عنوان: ${e.title}` : null,
+                  e.description ? `وصف: ${e.description}` : null,
+                  ...(e.fields || []).map(
+                    (f) => `${f.name}: ${f.value}`,
+                  ),
+                ].filter(Boolean);
+                return parts.length
+                  ? `[embed ${idx + 1}]\n${parts.join("\n")}`
+                  : null;
+              })
+              .filter(Boolean)
+              .join("\n")
+          : "";
+      const files = m.attachments?.size
+        ? [...m.attachments.values()]
+            .map((a) => `[مرفق] ${a.name} → ${a.url}`)
+            .join("\n")
+        : "";
+
+      lines.push(`----- ${time} -----`);
+      lines.push(author);
+      if (content) lines.push(content);
+      if (embeds) lines.push(embeds);
+      if (files) lines.push(files);
+      lines.push("");
+    }
+
+    const buf = Buffer.from(lines.join("\n"), "utf8");
+    const safeName = channel.name.replace(/[^\w\u0600-\u06ff-]+/g, "_").slice(0, 40);
+    transcriptFile = new AttachmentBuilder(buf, {
+      name: `ticket-${safeName}-${Date.now()}.txt`,
+    });
+  } catch (e) {
+    console.warn("transcript failed", e.message);
+  }
 
   await sendTicketLog(
     interaction.client,
     new EmbedBuilder()
       .setColor(0x95a5a6)
-      .setTitle("🔒 إغلاق تذكرة")
+      .setTitle("🔒 إغلاق تذكرة + أرشيف")
       .setDescription(
         [
           `**الروم:** \`${channel.name}\``,
           `**أغلقها:** <@${interaction.user.id}>`,
           meta.owner ? `**صاحب التذكرة:** <@${meta.owner}>` : null,
           meta.claimed ? `**المسؤول:** <@${meta.claimed}>` : null,
+          transcriptFile ? "**الأرشيف:** مرفق تحت ⬇️" : "**الأرشيف:** فشل الحفظ",
         ]
           .filter(Boolean)
           .join("\n"),
       )
       .setTimestamp(),
   );
+
+  if (transcriptFile) {
+    try {
+      const logCh = await interaction.client.channels.fetch(LOG_CHANNELS.tickets);
+      if (logCh?.isTextBased?.()) {
+        await logCh.send({
+          content: `📄 أرشيف تذكرة \`${channel.name}\``,
+          files: [transcriptFile],
+        });
+      }
+    } catch (e) {
+      console.warn("transcript send failed", e.message);
+    }
+  }
 
   try {
     await channel.setName(`مغلق-${channel.name}`.slice(0, 90));
