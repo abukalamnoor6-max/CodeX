@@ -551,9 +551,70 @@ export function attachGuard(client) {
     }
   });
 
-  // —— ROLES (member role add/remove) — Nova-style logs ——
+  // —— MEMBER UPDATE: roles + nickname (Nova-style) ——
   client.on("guildMemberUpdate", async (oldM, newM) => {
     if (newM.guild.id !== GUILD_ID) return;
+
+    const when = () =>
+      new Date().toLocaleString("en-US", {
+        timeZone: "Asia/Riyadh",
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      });
+
+    const memberBlock = [
+      "**معلومات العضو**",
+      `العضو: <@${newM.id}>`,
+      `اسم العضو: \`${newM.id}\``,
+    ].join("\n");
+
+    // Nickname change
+    const oldNick = oldM.nickname ?? null;
+    const newNick = newM.nickname ?? null;
+    if (oldNick !== newNick) {
+      const audit = await getExecutor(
+        newM.guild,
+        AuditLogEvent.MemberUpdate,
+        newM.id,
+      );
+      const admin = audit?.executor || null;
+      const prevName = oldNick || oldM.user?.username || "—";
+      const nextName = newNick || newM.user?.username || "—";
+
+      await sendLog(
+        client,
+        "roles",
+        new EmbedBuilder()
+          .setColor(0xed4245)
+          .setTitle("✏️ تم تحديث اسم اللقب لعضو في codeX")
+          .setDescription(
+            [
+              memberBlock,
+              "",
+              "**الاسم السابق**",
+              prevName,
+              "",
+              "**الاسم الجديد**",
+              nextName,
+              "",
+              "**تم التحديث بواسطة**",
+              `الادمن: ${admin ? `<@${admin.id}>` : "غير معروف"}`,
+              `معرّف الادمن: ${admin ? `(${admin.id})` : "—"}`,
+              "",
+              "**وقت التحديث**",
+              when(),
+            ].join("\n"),
+          )
+          .setFooter({ text: "codeX · Nickname" })
+          .setTimestamp(),
+      );
+    }
+
     const added = newM.roles.cache.filter((r) => !oldM.roles.cache.has(r.id));
     const removed = oldM.roles.cache.filter((r) => !newM.roles.cache.has(r.id));
     if (!added.size && !removed.size) return;
@@ -565,22 +626,7 @@ export function attachGuard(client) {
     );
     const admin = audit?.executor || null;
     const reason = audit?.reason?.trim() || "لم يتم تقديم سبب";
-    const when = new Date().toLocaleString("en-US", {
-      timeZone: "Asia/Riyadh",
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    });
-
-    const memberBlock = [
-      "**معلومات العضو**",
-      `العضو: <@${newM.id}>`,
-      `اسم العضو: \`${newM.id}\``,
-    ].join("\n");
+    const stamp = when();
 
     const adminBlock = (label) =>
       [
@@ -609,7 +655,7 @@ export function attachGuard(client) {
               reason,
               "",
               "**وقت الازالة**",
-              when,
+              stamp,
             ].join("\n"),
           )
           .setFooter({ text: "codeX · Roles" })
@@ -637,7 +683,7 @@ export function attachGuard(client) {
               reason,
               "",
               "**وقت الاعطاء**",
-              when,
+              stamp,
             ].join("\n"),
           )
           .setFooter({ text: "codeX · Roles" })
