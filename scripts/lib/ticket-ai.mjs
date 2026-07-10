@@ -139,19 +139,19 @@ function buildSystemPrompt(ticketType) {
     "",
     "قواعد إلزامية (أخطر من أي شيء آخر):",
     "1) جاوب فقط من قاعدة المعرفة. ممنوع الاختراع أو التخمين أو اختلاق سياسة.",
-    "2) إذا التفصيلة غير مكتوبة بوضوح: لا تعطِ جواباً قاطعاً. قل إنك تحتاج تأكيد الفريق، وescalate=true.",
+    "2) إذا التفصيلة غير مكتوبة بوضوح: لا تعطِ جواباً قاطعاً. اقترح زر «تحويل لدعم بشري» — بدون إجبار.",
     "3) خدمات codeX مخصصة للعميل: العميل يختار المتطلبات (شعار/تصميم/وصف)، والفريق ينفّذ.",
     "4) ممنوع تقول إن الفريق يفرض التصميم ويرفض اختيار العميل.",
     "5) مابات فايف إم بشعار سيرفرك = بشعار العميل. سيارة خاصة = العميل يحدد التصميم/المرجع.",
     "6) لا تعد بتنفيذ/تسليم/استرجاع/تعويض بنفسك.",
     "7) رتبة العميل: حساب المتجر ← مزاياي ← ربط Discord.",
-    "8) لأي تفاصيل زيادة (محتوى باقة، فرق باقات، نطاق شغل دقيق): قل إن الأفضل التحويل لدعم بشري وescalate=true. لا تختلق تفاصيل.",
+    "8) لأي تفاصيل زيادة: اقترح الزر فقط. التحويل الفعلي بالزر فقط، مو تلقائي. لا تختلق تفاصيل.",
     "",
     "أجب دائماً بصيغة JSON فقط:",
-    '{"reply":"نص الرد للعميل بالعربية","escalate":false,"reason":""}',
+    '{"reply":"نص الرد للعميل بالعربية","suggest_human":false}',
     "",
-    "escalate=true عندما: تفاصيل زيادة، تنفيذ بشري، استرجاع، خلاف دفع، منح رتبة يدوي، أو أي تفصيلة غير مؤكدة.",
-    "إذا escalate=true: اذكر صراحة أن الأفضل التحويل لدعم بشري.",
+    "إذا التفاصيل زيادة أو مو متأكد: اكتب في reply إن الأفضل الضغط على زر «تحويل لدعم بشري» — لكن لا تجبر التحويل.",
+    "ضع suggest_human=true فقط كتذكير داخلي؛ التحويل الفعلي يتم بالزر فقط.",
     "لا تذكر JSON للعميل.",
     "",
     "=== قاعدة المعرفة ===",
@@ -257,8 +257,10 @@ async function replyWithAi(message) {
     const result = await callLlm({ system, messages: history });
 
     const reply = String(result?.reply || "").trim().slice(0, 1900);
-    const escalate = Boolean(result?.escalate);
-    const reason = String(result?.reason || "").trim().slice(0, 200);
+    // ignore model escalate flags — transfer is button-only
+    void result?.escalate;
+    void result?.suggest_human;
+    void result?.reason;
 
     const freshChannel = await channel.fetch();
     const fresh = parseTopic(freshChannel.topic || channel.topic || "");
@@ -271,14 +273,8 @@ async function replyWithAi(message) {
       });
     }
 
-    if (escalate) {
-      await escalateTicket(
-        channel,
-        fresh,
-        reason || "المساعد ما قدر يكمل لوحده",
-        null,
-      );
-    }
+    // Soft suggest only — never force escalate from the model.
+    // Real transfer happens when the user/staff clicks «تحويل لدعم بشري».
   } catch (e) {
     console.warn("ticket AI failed", e.message);
     try {
