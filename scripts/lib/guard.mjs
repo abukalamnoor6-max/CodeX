@@ -551,43 +551,99 @@ export function attachGuard(client) {
     }
   });
 
-  // —— ROLES ——
+  // —— ROLES (member role add/remove) — Nova-style logs ——
   client.on("guildMemberUpdate", async (oldM, newM) => {
     if (newM.guild.id !== GUILD_ID) return;
     const added = newM.roles.cache.filter((r) => !oldM.roles.cache.has(r.id));
     const removed = oldM.roles.cache.filter((r) => !newM.roles.cache.has(r.id));
     if (!added.size && !removed.size) return;
 
-    const audit = added.size
-      ? await getExecutor(newM.guild, AuditLogEvent.MemberRoleUpdate, newM.id)
-      : null;
-    const exAdd = audit?.executor || null;
-
-    const actionParts = [];
-    if (added.size) actionParts.push(`أضاف رتب: ${[...added.values()].map((r) => r.name).join(", ")}`);
-    if (removed.size) actionParts.push(`أزال رتب: ${[...removed.values()].map((r) => r.name).join(", ")}`);
-
-    await sendLog(
-      client,
-      "roles",
-      baseEmbed(0x9b59b6, "🎭 تحديث رتب عضو").setDescription(
-        [
-          describeAction(exAdd?.id, actionParts.join(" | ") || "تحديث رتب"),
-          `**العضو:** <@${newM.id}> (\`${newM.user.tag}\`)`,
-          added.size
-            ? `**أُضيفت:** ${[...added.values()].map((r) => `\`${r.name}\``).join(", ")}`
-            : null,
-          removed.size
-            ? `**أُزيلت:** ${[...removed.values()].map((r) => `\`${r.name}\``).join(", ")}`
-            : null,
-        ]
-          .filter(Boolean)
-          .join("\n"),
-      ),
+    const audit = await getExecutor(
+      newM.guild,
+      AuditLogEvent.MemberRoleUpdate,
+      newM.id,
     );
+    const admin = audit?.executor || null;
+    const reason = audit?.reason?.trim() || "لم يتم تقديم سبب";
+    const when = new Date().toLocaleString("en-US", {
+      timeZone: "Asia/Riyadh",
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
 
-    // Dangerous: someone got Admin / dangerous perms via role
+    const memberBlock = [
+      "**معلومات العضو**",
+      `العضو: <@${newM.id}>`,
+      `اسم العضو: \`${newM.id}\``,
+    ].join("\n");
+
+    const adminBlock = (label) =>
+      [
+        `**${label}**`,
+        `الادمن: ${admin ? `<@${admin.id}>` : "غير معروف"}`,
+        `معرّف الادمن: ${admin ? `(${admin.id})` : "—"}`,
+      ].join("\n");
+
+    for (const role of removed.values()) {
+      await sendLog(
+        client,
+        "roles",
+        new EmbedBuilder()
+          .setColor(0xed4245)
+          .setTitle("🎖️ تم ازالة رتبة من عضو في codeX")
+          .setDescription(
+            [
+              memberBlock,
+              "",
+              "**الرتبة المزيلة**",
+              `<@&${role.id}>`,
+              "",
+              adminBlock("تم الازالة بواسطة"),
+              "",
+              "**سبب الازالة**",
+              reason,
+              "",
+              "**وقت الازالة**",
+              when,
+            ].join("\n"),
+          )
+          .setFooter({ text: "codeX · Roles" })
+          .setTimestamp(),
+      );
+    }
+
     for (const role of added.values()) {
+      await sendLog(
+        client,
+        "roles",
+        new EmbedBuilder()
+          .setColor(0xed4245)
+          .setTitle("🎖️ تم اعطاء رتبة لعضو في codeX")
+          .setDescription(
+            [
+              memberBlock,
+              "",
+              "**الرتبة المعطاة**",
+              `<@&${role.id}>`,
+              "",
+              adminBlock("تم اعطاء الرتبة بواسطة"),
+              "",
+              "**سبب الاعطاء**",
+              reason,
+              "",
+              "**وقت الاعطاء**",
+              when,
+            ].join("\n"),
+          )
+          .setFooter({ text: "codeX · Roles" })
+          .setTimestamp(),
+      );
+
       if (
         role.permissions.has(PermissionFlagsBits.Administrator) ||
         role.permissions.has(PermissionFlagsBits.BanMembers) ||
@@ -597,7 +653,7 @@ export function attachGuard(client) {
           client,
           "important",
           baseEmbed(0xed4245, "🚨 رتبة صلاحيات خطرة").setDescription(
-            `<@${newM.id}> حصل على \`${role.name}\`\nبواسطة: ${exAdd ? `<@${exAdd.id}>` : "—"}`,
+            `<@${newM.id}> حصل على \`${role.name}\`\nبواسطة: ${admin ? `<@${admin.id}>` : "—"}`,
           ),
         );
       }
