@@ -254,7 +254,98 @@ async function punish(member, reason, { timeoutMs = 10 * 60_000, deleteMsg } = {
   return true;
 }
 
+const inviteCache = new Map(); // guildId -> Map<code, {uses, inviterId, inviterTag}>
+
+function formatLogTime(date = new Date()) {
+  return date.toLocaleString("en-US", {
+    timeZone: "Asia/Riyadh",
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+async function cacheGuildInvites(guild) {
+  try {
+    const invites = await guild.invites.fetch();
+    const map = new Map();
+    for (const inv of invites.values()) {
+      map.set(inv.code, {
+        uses: inv.uses ?? 0,
+        inviterId: inv.inviter?.id || null,
+        inviterTag: inv.inviter?.username || "—",
+      });
+    }
+    inviteCache.set(guild.id, map);
+  } catch (e) {
+    console.warn("invite cache failed", e.message);
+  }
+}
+
+async function resolveJoinInvite(guild) {
+  const prev = inviteCache.get(guild.id) || new Map();
+  let used = null;
+  try {
+    const invites = await guild.invites.fetch();
+    const next = new Map();
+    for (const inv of invites.values()) {
+      const uses = inv.uses ?? 0;
+      const row = {
+        uses,
+        inviterId: inv.inviter?.id || null,
+        inviterTag: inv.inviter?.username || "—",
+      };
+      next.set(inv.code, row);
+      const before = prev.get(inv.code)?.uses ?? 0;
+      if (uses > before) {
+        used = {
+          code: inv.code,
+          inviterId: row.inviterId,
+          inviterTag: row.inviterTag,
+        };
+      }
+    }
+    // invite deleted after use (vanity / one-time) — detect missing codes with uses
+    if (!used) {
+      for (const [code, row] of prev.entries()) {
+        if (!next.has(code)) {
+          used = {
+            code,
+            inviterId: row.inviterId,
+            inviterTag: row.inviterTag,
+          };
+          break;
+        }
+      }
+    }
+    inviteCache.set(guild.id, next);
+  } catch (e) {
+    console.warn("resolve invite failed", e.message);
+  }
+  return used;
+}
+
 export function attachGuard(client) {
+  client.once("clientReady", async () => {
+    const guild = client.guilds.cache.get(GUILD_ID);
+    if (guild) await cacheGuildInvites(guild);
+  });
+
+  client.on("inviteCreate", async (invite) => {
+    if (invite.guild?.id !== GUILD_ID) return;
+    await cacheGuildInvites(invite.guild);
+  });
+
+  client.on("inviteDelete", async (invite) => {
+    if (invite.guild?.id !== GUILD_ID) return;
+    const map = inviteCache.get(GUILD_ID);
+    if (map) map.delete(invite.code);
+  });
+
   // —— JOIN ——
   client.on("guildMemberAdd", async (member) => {
     if (member.guild.id !== GUILD_ID) return;
@@ -264,20 +355,33 @@ export function attachGuard(client) {
     joinBuckets.push(now);
     while (joinBuckets.length && now - joinBuckets[0] > 20_000) joinBuckets.shift();
 
+    const usedInvite = await resolveJoinInvite(member.guild);
+    const username = member.user.username || member.user.tag || "—";
+
     await sendLog(
       client,
       "join",
-      baseEmbed(0x57f287, "📥 دخول عضو")
-        .setThumbnail(member.user.displayAvatarURL({ size: 128 }))
+      new EmbedBuilder()
+        .setColor(0xed4245)
+        .setTitle(`🎉 عضو جديد \`${username}\` انضم إلى السيرفر!`)
         .setDescription(
           [
-            `**العضو:** <@${member.id}> (\`${member.user.tag}\`)`,
-            `**الآيدي:** \`${member.id}\``,
-            `**عمر الحساب:** ${ageDays.toFixed(1)} يوم`,
-            `**بوت؟:** ${member.user.bot ? "نعم" : "لا"}`,
-            `**الأعضاء:** ${member.guild.memberCount}`,
+            "**معلومات العضو**",
+            `العضو: <@${member.id}>`,
+            `اسم المستخدم: \`${username}\``,
+            "",
+            "**تمت الدعوة بواسطة**",
+            usedInvite?.inviterId
+              ? `المستخدم: <@${usedInvite.inviterId}>`
+              : "المستخدم: غير معروف",
+            `اسم المستخدم: \`${usedInvite?.inviterTag || "—"}\``,
+            "",
+            "**الوقت**",
+            `\`${formatLogTime()}\``,
           ].join("\n"),
-        ),
+        )
+        .setFooter({ text: "codeX · Join" })
+        .setTimestamp(),
     );
 
     // Anti-raid: many joins in short window
@@ -324,26 +428,27 @@ export function attachGuard(client) {
   // —— LEAVE ——
   client.on("guildMemberRemove", async (member) => {
     if (member.guild.id !== GUILD_ID) return;
-    const roles = member.roles?.cache
-      ?.filter((r) => r.name !== "@everyone")
-      .map((r) => r.name)
-      .slice(0, 12)
-      .join(", ");
+    const username = member.user?.username || member.user?.tag || String(member.id);
+
     await sendLog(
       client,
       "left",
-      baseEmbed(0xed4245, "📤 خروج عضو")
-        .setThumbnail(member.user?.displayAvatarURL?.({ size: 128 }) || null)
+      new EmbedBuilder()
+        .setColor(0xed4245)
+        .setTitle(`💨 عضو \`${username}\` قد غادر السيرفر.`)
         .setDescription(
           [
-            `**العضو:** <@${member.id}> (\`${member.user?.tag || member.id}\`)`,
-            `**الآيدي:** \`${member.id}\``,
-            roles ? `**رتبه السابقة:** ${clip(roles, 400)}` : null,
-            `**الأعضاء:** ${member.guild.memberCount}`,
-          ]
-            .filter(Boolean)
-            .join("\n"),
-        ),
+            "**معلومات العضو**",
+            `العضو: <@${member.id}>`,
+            `اسم المستخدم: \`${username}\``,
+            `معرّف المستخدم: \`${member.id}\``,
+            "",
+            "**الوقت**",
+            `\`${formatLogTime()}\``,
+          ].join("\n"),
+        )
+        .setFooter({ text: "codeX · Left" })
+        .setTimestamp(),
     );
   });
 
