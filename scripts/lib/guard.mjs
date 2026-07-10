@@ -182,19 +182,32 @@ async function getExecutor(guild, typeOrTypes, targetId, { windowMs = 30_000 } =
 
 /** Diff channel overwrites → human summary */
 function diffOverwrites(oldCh, newCh) {
-  const oldMap = oldCh.permissionOverwrites.cache;
-  const newMap = newCh.permissionOverwrites.cache;
+  const oldMap = oldCh.permissionOverwrites?.cache;
+  const newMap = newCh.permissionOverwrites?.cache;
+  if (!oldMap || !newMap) return [];
   const ids = new Set([...oldMap.keys(), ...newMap.keys()]);
   const changes = [];
   for (const id of ids) {
     const o = oldMap.get(id);
     const n = newMap.get(id);
+    const oAllow = o ? String(o.allow.bitfield) : null;
+    const oDeny = o ? String(o.deny.bitfield) : null;
+    const nAllow = n ? String(n.allow.bitfield) : null;
+    const nDeny = n ? String(n.deny.bitfield) : null;
     if (!o && n) {
-      changes.push({ id, kind: "أضاف صلاحيات", allow: n.allow.bitfield, deny: n.deny.bitfield, type: n.type });
+      changes.push({
+        id,
+        kind: "أضاف صلاحيات",
+        type: Number(n.type),
+      });
     } else if (o && !n) {
-      changes.push({ id, kind: "حذف صلاحيات", type: o.type });
-    } else if (o && n && (o.allow.bitfield !== n.allow.bitfield || o.deny.bitfield !== n.deny.bitfield)) {
-      changes.push({ id, kind: "عدّل صلاحيات", allow: n.allow.bitfield, deny: n.deny.bitfield, type: n.type });
+      changes.push({ id, kind: "حذف صلاحيات", type: Number(o.type) });
+    } else if (o && n && (oAllow !== nAllow || oDeny !== nDeny)) {
+      changes.push({
+        id,
+        kind: "عدّل صلاحيات",
+        type: Number(n.type),
+      });
     }
   }
   return changes;
@@ -714,15 +727,19 @@ export function attachGuard(client) {
 
   client.on("channelUpdate", async (oldCh, newCh) => {
     if (!newCh.guild || newCh.guild.id !== GUILD_ID) return;
+    // Ignore log-channel noise from our own bot edits when possible
+    if (Object.values(LOG_CHANNELS).includes(newCh.id)) return;
+
     const nameChanged = oldCh.name !== newCh.name;
+    const topicChanged = (oldCh.topic || "") !== (newCh.topic || "");
     const overwriteDiff = diffOverwrites(oldCh, newCh);
     const permsChanged = overwriteDiff.length > 0;
-    if (!nameChanged && !permsChanged) return;
+    if (!nameChanged && !topicChanged && !permsChanged) return;
 
     if (permsChanged) {
       let audit = null;
-      for (let attempt = 0; attempt < 4 && !audit?.executor; attempt++) {
-        await new Promise((r) => setTimeout(r, attempt === 0 ? 1500 : 1200));
+      for (let attempt = 0; attempt < 5 && !audit?.executor; attempt++) {
+        await new Promise((r) => setTimeout(r, attempt === 0 ? 800 : 1000));
         audit = await getExecutor(
           newCh.guild,
           [
@@ -732,29 +749,29 @@ export function attachGuard(client) {
             AuditLogEvent.ChannelUpdate,
           ],
           newCh.id,
-          { windowMs: 60_000 },
+          { windowMs: 90_000 },
         );
       }
       const ex = audit?.executor || null;
-      // For overwrite events: target = channel, extra = role/member affected
+      // Skip pure bot self-noise unless someone else did it
+      if (ex?.id === client.user.id && overwriteDiff.length === 0) return;
+
       const affected = audit?.entry?.extra;
       let affectedLabel = null;
       if (affected?.name) {
         affectedLabel = `**على رتبة:** \`${affected.name}\``;
-      } else if (affected?.userId || affected?.id) {
-        const uid = affected.userId || affected.id;
-        affectedLabel = `**على عضو/رتبة:** <@${uid}> / <@&${uid}>`;
-      } else if (overwriteDiff[0]) {
-        const id = overwriteDiff[0].id;
-        affectedLabel =
-          overwriteDiff[0].type === 0
-            ? `**على رتبة:** <@&${id}>`
-            : `**على عضو:** <@${id}>`;
+      } else if (affected?.userId) {
+        affectedLabel = `**على عضو:** <@${affected.userId}>`;
+      } else if (affected?.id) {
+        affectedLabel = `**على:** <@&${affected.id}> / <@${affected.id}>`;
       }
 
       const detail = overwriteDiff
-        .slice(0, 5)
-        .map((c) => `• ${c.kind} → ${c.type === 0 ? `<@&${c.id}>` : `<@${c.id}>`}`)
+        .slice(0, 8)
+        .map((c) => {
+          const who = c.type === 0 ? `<@&${c.id}>` : `<@${c.id}>`;
+          return `• ${c.kind} → ${who}`;
+        })
         .join("\n");
 
       await sendLog(
@@ -779,7 +796,7 @@ export function attachGuard(client) {
         newCh.guild,
         AuditLogEvent.ChannelUpdate,
         newCh.id,
-        { windowMs: 45_000 },
+        { windowMs: 60_000 },
       );
       const ex = audit?.executor || null;
       await sendLog(

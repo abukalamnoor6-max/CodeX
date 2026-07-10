@@ -1,5 +1,6 @@
 /**
  * codeX Tickets — استفسار / استلام طلب / مشكلة
+ * Staff controls: claim / add / remove / alert / close
  */
 import {
   EmbedBuilder,
@@ -11,6 +12,9 @@ import {
   PermissionFlagsBits,
   OverwriteType,
   AttachmentBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
 } from "discord.js";
 import fs from "fs";
 import path from "path";
@@ -22,14 +26,19 @@ const ROOT = path.resolve(__dirname, "../..");
 
 export const TICKET_CHANNEL_ID =
   process.env.DISCORD_TICKET_CHANNEL_ID || "1524961237257949275";
-const GUILD_ID = process.env.DISCORD_GUILD_ID || "1524901009195798679";
 const OWNER_ID = process.env.DISCORD_OWNER_ID || "1210972261968912425";
-const STAFF_ROLE_RE = /𝐎𝐖𝐍𝐄𝐑|OWNER|𝐓𝐄𝐀𝐌|TEAM|Founder|Admin|Partner|𝐏𝐚𝐫𝐭𝐧𝐞𝐫/i;
+
+/** Only these roles can see tickets + use staff controls */
+export const STAFF_ROLE_IDS = [
+  process.env.DISCORD_STAFF_ROLE_OWNER || "1524961206144860333", // 〢 OWNER
+  process.env.DISCORD_STAFF_ROLE_TEAM || "1524961198360236084", // 〢 TEAM CodeX
+];
 
 export const TICKET_TYPES = {
   inquiry: {
     value: "inquiry",
     label: "استفسار",
+    categoryLabel: "للاستفسار و المشاكل",
     emoji: "💬",
     description: "سؤال عن المتجر أو المنتجات أو الخدمات",
     color: 0x5865f2,
@@ -38,6 +47,7 @@ export const TICKET_TYPES = {
   delivery: {
     value: "delivery",
     label: "استلام طلب",
+    categoryLabel: "استلام طلب",
     emoji: "📦",
     description: "جاهز تستلم طلبك أو تتابع التسليم",
     color: 0x57f287,
@@ -46,6 +56,7 @@ export const TICKET_TYPES = {
   problem: {
     value: "problem",
     label: "مشكلة",
+    categoryLabel: "للاستفسار و المشاكل",
     emoji: "⚠️",
     description: "مشكلة في طلب أو منتج أو الدفع",
     color: 0xed4245,
@@ -60,11 +71,30 @@ function bannerPath() {
 function bannerUrl() {
   const base =
     process.env.NEXT_PUBLIC_SITE_URL || "https://codex-theta-two.vercel.app";
-  return `${base.replace(/\/$/, "")}/discord/codex-ticket-banner.png?v=1`;
+  return `${base.replace(/\/$/, "")}/discord/codex-ticket-banner.png?v=2`;
 }
 
-function findStaffRoles(guild) {
-  return [...guild.roles.cache.values()].filter((r) => STAFF_ROLE_RE.test(r.name));
+function parseTopic(topic = "") {
+  const owner = (topic.match(/owner:(\d{15,20})/) || [])[1] || null;
+  const type = (topic.match(/type:([a-z]+)/) || [])[1] || "inquiry";
+  const claimed = (topic.match(/claimed:(\d{15,20})/) || [])[1] || null;
+  return { owner, type, claimed };
+}
+
+function buildTopic({ type, owner, claimed }) {
+  return [
+    `type:${type}`,
+    `owner:${owner}`,
+    claimed ? `claimed:${claimed}` : null,
+  ]
+    .filter(Boolean)
+    .join(" | ");
+}
+
+function isStaffMember(member) {
+  if (!member) return false;
+  if (member.id === OWNER_ID) return true;
+  return STAFF_ROLE_IDS.some((id) => member.roles.cache.has(id));
 }
 
 async function sendTicketLog(client, embed) {
@@ -77,6 +107,63 @@ async function sendTicketLog(client, embed) {
   }
 }
 
+function staffControlsRow(ownerId) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`codex_ticket_claim:${ownerId}`)
+      .setLabel("استلام التذكرة")
+      .setStyle(ButtonStyle.Primary)
+      .setEmoji("📝"),
+    new ButtonBuilder()
+      .setCustomId(`codex_ticket_add:${ownerId}`)
+      .setLabel("إضافة شخص")
+      .setStyle(ButtonStyle.Success)
+      .setEmoji("➕"),
+    new ButtonBuilder()
+      .setCustomId(`codex_ticket_remove:${ownerId}`)
+      .setLabel("إزالة شخص")
+      .setStyle(ButtonStyle.Danger)
+      .setEmoji("➖"),
+    new ButtonBuilder()
+      .setCustomId(`codex_ticket_alert:${ownerId}`)
+      .setLabel("تنبيه العميل")
+      .setStyle(ButtonStyle.Danger)
+      .setEmoji("📢"),
+    new ButtonBuilder()
+      .setCustomId(`codex_ticket_close:${ownerId}`)
+      .setLabel("إغلاق التذكرة")
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji("🔒"),
+  );
+}
+
+function ticketEmbed({ opener, type, claimedById }) {
+  const manager = claimedById
+    ? `<@${claimedById}> (\`${claimedById}\`)`
+    : "بانتظار الاستلام";
+
+  return new EmbedBuilder()
+    .setColor(type.color)
+    .setAuthor({
+      name: opener.tag || opener.username,
+      iconURL: opener.displayAvatarURL?.({ size: 64 }) || undefined,
+    })
+    .addFields(
+      {
+        name: "فئة التذكرة",
+        value: type.categoryLabel || type.label,
+        inline: true,
+      },
+      {
+        name: "مسؤول التذكرة",
+        value: manager,
+        inline: true,
+      },
+    )
+    .setFooter({ text: "codeX Store" })
+    .setTimestamp();
+}
+
 export function buildTicketPanelPayload() {
   const embed = new EmbedBuilder()
     .setColor(0x0059db)
@@ -86,9 +173,9 @@ export function buildTicketPanelPayload() {
         "الدعم متوفر من **10 صباحاً** إلى **10 مساءً**",
         "",
         "اختر سبب فتح التذكرة من القائمة تحت:",
-        "• **استفسار** — سؤال عام",
-        "• **استلام طلب** — متابعة / استلام",
-        "• **مشكلة** — خلل أو شكوى",
+        "• **استفسار**",
+        "• **استلام طلب**",
+        "• **مشكلة**",
       ].join("\n"),
     )
     .setImage(bannerUrl())
@@ -134,6 +221,50 @@ async function ensureTicketCategory(guild) {
   return cat;
 }
 
+function ticketOverwrites(guild, openerId, botId) {
+  return [
+    {
+      id: guild.roles.everyone.id,
+      type: OverwriteType.Role,
+      deny: [PermissionFlagsBits.ViewChannel],
+    },
+    {
+      id: openerId,
+      type: OverwriteType.Member,
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.AttachFiles,
+        PermissionFlagsBits.ReadMessageHistory,
+        PermissionFlagsBits.EmbedLinks,
+      ],
+    },
+    {
+      id: botId,
+      type: OverwriteType.Member,
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.ManageChannels,
+        PermissionFlagsBits.ManageMessages,
+        PermissionFlagsBits.ReadMessageHistory,
+        PermissionFlagsBits.MentionEveryone,
+      ],
+    },
+    ...STAFF_ROLE_IDS.map((id) => ({
+      id,
+      type: OverwriteType.Role,
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.ReadMessageHistory,
+        PermissionFlagsBits.AttachFiles,
+        PermissionFlagsBits.ManageMessages,
+      ],
+    })),
+  ];
+}
+
 export async function openTicket(interaction, typeKey) {
   const type = TICKET_TYPES[typeKey];
   if (!type) {
@@ -147,7 +278,6 @@ export async function openTicket(interaction, typeKey) {
   await guild.channels.fetch();
   await guild.roles.fetch();
 
-  // One open ticket per user
   const existing = guild.channels.cache.find(
     (c) =>
       c.type === ChannelType.GuildText &&
@@ -162,110 +292,46 @@ export async function openTicket(interaction, typeKey) {
   }
 
   const cat = await ensureTicketCategory(guild);
-  const staffRoles = findStaffRoles(guild);
   const me = await guild.members.fetchMe();
 
-  const overwrites = [
-    {
-      id: guild.roles.everyone.id,
-      type: OverwriteType.Role,
-      deny: [PermissionFlagsBits.ViewChannel],
-    },
-    {
-      id: interaction.user.id,
-      type: OverwriteType.Member,
-      allow: [
-        PermissionFlagsBits.ViewChannel,
-        PermissionFlagsBits.SendMessages,
-        PermissionFlagsBits.AttachFiles,
-        PermissionFlagsBits.ReadMessageHistory,
-        PermissionFlagsBits.EmbedLinks,
-      ],
-    },
-    {
-      id: me.id,
-      type: OverwriteType.Member,
-      allow: [
-        PermissionFlagsBits.ViewChannel,
-        PermissionFlagsBits.SendMessages,
-        PermissionFlagsBits.ManageChannels,
-        PermissionFlagsBits.ManageMessages,
-        PermissionFlagsBits.ReadMessageHistory,
-      ],
-    },
-    {
-      id: OWNER_ID,
-      type: OverwriteType.Member,
-      allow: [
-        PermissionFlagsBits.ViewChannel,
-        PermissionFlagsBits.SendMessages,
-        PermissionFlagsBits.ManageChannels,
-        PermissionFlagsBits.ReadMessageHistory,
-      ],
-    },
-    ...staffRoles.map((r) => ({
-      id: r.id,
-      type: OverwriteType.Role,
-      allow: [
-        PermissionFlagsBits.ViewChannel,
-        PermissionFlagsBits.SendMessages,
-        PermissionFlagsBits.ReadMessageHistory,
-        PermissionFlagsBits.AttachFiles,
-      ],
-    })),
-  ];
-
-  const short = interaction.user.username
-    .toLowerCase()
-    .replace(/[^a-z0-9\u0600-\u06ff]/gi, "")
-    .slice(0, 12) || "user";
+  const short =
+    interaction.user.username
+      .toLowerCase()
+      .replace(/[^a-z0-9\u0600-\u06ff]/gi, "")
+      .slice(0, 12) || "user";
   const name = `${type.prefix}-${short}`.slice(0, 90);
 
   const channel = await guild.channels.create({
     name,
     type: ChannelType.GuildText,
     parent: cat.id,
-    topic: `type:${type.value} | owner:${interaction.user.id} | ${type.label}`,
-    permissionOverwrites: overwrites,
+    topic: buildTopic({
+      type: type.value,
+      owner: interaction.user.id,
+      claimed: null,
+    }),
+    permissionOverwrites: ticketOverwrites(guild, interaction.user.id, me.id),
     reason: `codeX ticket: ${type.label}`,
   });
 
-  const closeRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`codex_ticket_close:${interaction.user.id}`)
-      .setLabel("إغلاق التذكرة")
-      .setStyle(ButtonStyle.Danger)
-      .setEmoji("🔒"),
-  );
+  const staffMentions = STAFF_ROLE_IDS.map((id) => `<@&${id}>`).join(" ");
 
   await channel.send({
-    content: `<@${interaction.user.id}> ${staffRoles[0] ? `<@&${staffRoles[0].id}>` : `<@${OWNER_ID}>`}`,
+    content: `${staffMentions}`,
     embeds: [
-      new EmbedBuilder()
-        .setColor(type.color)
-        .setTitle(`${type.emoji} تذكرة ${type.label}`)
-        .setDescription(
-          [
-            `مرحباً <@${interaction.user.id}>`,
-            "",
-            `**النوع:** ${type.label}`,
-            "اكتب تفاصيل طلبك هنا، والفريق بيرد عليك بأقرب وقت.",
-            "",
-            type.value === "delivery"
-              ? "إذا عندك رقم طلب، أرسله مع الرسالة."
-              : type.value === "problem"
-                ? "وضّح المشكلة + رقم الطلب إن وجد + صورة إن أمكن."
-                : "اكتب سؤالك بوضوح.",
-          ].join("\n"),
-        )
-        .setFooter({ text: "codeX · التذاكر" })
-        .setTimestamp(),
+      ticketEmbed({
+        opener: interaction.user,
+        type,
+        claimedById: null,
+      }),
     ],
-    components: [closeRow],
-    allowedMentions: {
-      users: [interaction.user.id, OWNER_ID],
-      roles: staffRoles.slice(0, 1).map((r) => r.id),
-    },
+    components: [staffControlsRow(interaction.user.id)],
+    allowedMentions: { roles: STAFF_ROLE_IDS },
+  });
+
+  await channel.send({
+    content: `<@${interaction.user.id}> اكتب تفاصيل طلبك هنا، والفريق بيرد عليك قريباً.`,
+    allowedMentions: { users: [interaction.user.id] },
   });
 
   await sendTicketLog(
@@ -287,7 +353,6 @@ export async function openTicket(interaction, typeKey) {
     content: `تم فتح تذكرتك: ${channel}`,
   });
 
-  // Reset select menu so others can open tickets
   try {
     if (interaction.message?.editable) {
       await interaction.message.edit(buildTicketPanelPayload());
@@ -295,21 +360,175 @@ export async function openTicket(interaction, typeKey) {
   } catch {}
 }
 
+async function requireStaff(interaction) {
+  if (isStaffMember(interaction.member)) return true;
+  await interaction.reply({
+    content: "هالزر للطاقم فقط.",
+    ephemeral: true,
+  });
+  return false;
+}
+
+async function claimTicket(interaction) {
+  if (!(await requireStaff(interaction))) return;
+  const channel = interaction.channel;
+  const meta = parseTopic(channel.topic || "");
+  const type = TICKET_TYPES[meta.type] || TICKET_TYPES.inquiry;
+
+  if (meta.claimed && meta.claimed !== interaction.user.id) {
+    await interaction.reply({
+      content: `التذكرة مستلمة مسبقاً من <@${meta.claimed}>`,
+      ephemeral: true,
+    });
+    return;
+  }
+
+  await channel.setTopic(
+    buildTopic({
+      type: meta.type,
+      owner: meta.owner,
+      claimed: interaction.user.id,
+    }),
+  );
+
+  const opener = meta.owner
+    ? await interaction.client.users.fetch(meta.owner).catch(() => interaction.user)
+    : interaction.user;
+
+  await interaction.update({
+    embeds: [
+      ticketEmbed({
+        opener,
+        type,
+        claimedById: interaction.user.id,
+      }),
+    ],
+    components: [staffControlsRow(meta.owner || "0")],
+  });
+
+  await channel.send({
+    content: `✅ استلم التذكرة: <@${interaction.user.id}>`,
+  });
+
+  await sendTicketLog(
+    interaction.client,
+    new EmbedBuilder()
+      .setColor(0x5865f2)
+      .setTitle("📝 استلام تذكرة")
+      .setDescription(
+        `**الروم:** ${channel}\n**المسؤول:** <@${interaction.user.id}>`,
+      )
+      .setTimestamp(),
+  );
+}
+
+async function showUserModal(interaction, mode) {
+  if (!(await requireStaff(interaction))) return;
+  const modal = new ModalBuilder()
+    .setCustomId(`codex_ticket_modal_${mode}`)
+    .setTitle(mode === "add" ? "إضافة شخص للتذكرة" : "إزالة شخص من التذكرة");
+
+  const input = new TextInputBuilder()
+    .setCustomId("user_id")
+    .setLabel("آيدي العضو أو منشن")
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder("1210972261968912425 أو @user")
+    .setRequired(true);
+
+  modal.addComponents(new ActionRowBuilder().addComponents(input));
+  await interaction.showModal(modal);
+}
+
+function extractUserId(raw) {
+  const m = String(raw || "").match(/\d{15,20}/);
+  return m?.[0] || null;
+}
+
+async function handleUserModal(interaction, mode) {
+  if (!(await requireStaff(interaction))) return;
+  const userId = extractUserId(interaction.fields.getTextInputValue("user_id"));
+  if (!userId) {
+    await interaction.reply({ content: "آيدي غير صحيح.", ephemeral: true });
+    return;
+  }
+
+  const channel = interaction.channel;
+  const meta = parseTopic(channel.topic || "");
+
+  try {
+    if (mode === "add") {
+      await channel.permissionOverwrites.edit(userId, {
+        ViewChannel: true,
+        SendMessages: true,
+        ReadMessageHistory: true,
+        AttachFiles: true,
+      });
+      await interaction.reply({
+        content: `تمت إضافة <@${userId}> للتذكرة.`,
+      });
+      await sendTicketLog(
+        interaction.client,
+        new EmbedBuilder()
+          .setColor(0x57f287)
+          .setTitle("➕ إضافة شخص لتذكرة")
+          .setDescription(
+            `**الروم:** ${channel}\n**أضاف:** <@${interaction.user.id}>\n**العضو:** <@${userId}>`,
+          )
+          .setTimestamp(),
+      );
+    } else {
+      if (userId === meta.owner) {
+        await interaction.reply({
+          content: "ما تقدر تشيل صاحب التذكرة.",
+          ephemeral: true,
+        });
+        return;
+      }
+      await channel.permissionOverwrites.delete(userId);
+      await interaction.reply({
+        content: `تمت إزالة <@${userId}> من التذكرة.`,
+      });
+      await sendTicketLog(
+        interaction.client,
+        new EmbedBuilder()
+          .setColor(0xed4245)
+          .setTitle("➖ إزالة شخص من تذكرة")
+          .setDescription(
+            `**الروم:** ${channel}\n**أزال:** <@${interaction.user.id}>\n**العضو:** <@${userId}>`,
+          )
+          .setTimestamp(),
+      );
+    }
+  } catch (e) {
+    await interaction.reply({
+      content: `فشل التعديل: ${e.message}`,
+      ephemeral: true,
+    });
+  }
+}
+
+async function alertCustomer(interaction) {
+  if (!(await requireStaff(interaction))) return;
+  const meta = parseTopic(interaction.channel.topic || "");
+  if (!meta.owner) {
+    await interaction.reply({ content: "ما لقيت صاحب التذكرة.", ephemeral: true });
+    return;
+  }
+  await interaction.reply({
+    content: `📢 <@${meta.owner}> يرجى الرد على التذكرة — فريق الدعم بانتظارك.`,
+    allowedMentions: { users: [meta.owner] },
+  });
+}
+
 export async function closeTicket(interaction) {
   const channel = interaction.channel;
   if (!channel || channel.type !== ChannelType.GuildText) return;
 
-  const topic = channel.topic || "";
-  const ownerMatch = topic.match(/owner:(\d{15,20})/);
-  const ownerId = ownerMatch?.[1];
-  const isOwner = ownerId && interaction.user.id === ownerId;
-  const member = interaction.member;
-  const isStaff =
-    interaction.user.id === OWNER_ID ||
-    member?.permissions?.has(PermissionFlagsBits.ManageChannels) ||
-    member?.roles?.cache?.some((r) => STAFF_ROLE_RE.test(r.name));
+  const meta = parseTopic(channel.topic || "");
+  const isOwner = meta.owner && interaction.user.id === meta.owner;
+  const staff = isStaffMember(interaction.member);
 
-  if (!isOwner && !isStaff) {
+  if (!isOwner && !staff) {
     await interaction.reply({
       content: "ما تقدر تغلق هالتذكرة.",
       ephemeral: true,
@@ -317,7 +536,7 @@ export async function closeTicket(interaction) {
     return;
   }
 
-  await interaction.reply({ content: "جاري إغلاق التذكرة…" });
+  await interaction.reply({ content: "جاري إغلاق التذكرة خلال ثوانٍ…" });
 
   await sendTicketLog(
     interaction.client,
@@ -328,7 +547,8 @@ export async function closeTicket(interaction) {
         [
           `**الروم:** \`${channel.name}\``,
           `**أغلقها:** <@${interaction.user.id}>`,
-          ownerId ? `**صاحب التذكرة:** <@${ownerId}>` : null,
+          meta.owner ? `**صاحب التذكرة:** <@${meta.owner}>` : null,
+          meta.claimed ? `**المسؤول:** <@${meta.claimed}>` : null,
         ]
           .filter(Boolean)
           .join("\n"),
@@ -352,22 +572,62 @@ export async function closeTicket(interaction) {
 export function attachTickets(client) {
   client.on("interactionCreate", async (interaction) => {
     try {
-      if (interaction.isStringSelectMenu() && interaction.customId === "codex_ticket_open") {
-        const value = interaction.values[0];
-        await openTicket(interaction, value);
+      if (
+        interaction.isStringSelectMenu() &&
+        interaction.customId === "codex_ticket_open"
+      ) {
+        await openTicket(interaction, interaction.values[0]);
         return;
       }
 
-      if (interaction.isButton() && interaction.customId.startsWith("codex_ticket_close:")) {
+      if (interaction.isModalSubmit()) {
+        if (interaction.customId === "codex_ticket_modal_add") {
+          await handleUserModal(interaction, "add");
+          return;
+        }
+        if (interaction.customId === "codex_ticket_modal_remove") {
+          await handleUserModal(interaction, "remove");
+          return;
+        }
+      }
+
+      if (!interaction.isButton()) return;
+      const id = interaction.customId;
+
+      if (id.startsWith("codex_ticket_claim:")) {
+        await claimTicket(interaction);
+        return;
+      }
+      if (id.startsWith("codex_ticket_add:")) {
+        await showUserModal(interaction, "add");
+        return;
+      }
+      if (id.startsWith("codex_ticket_remove:")) {
+        await showUserModal(interaction, "remove");
+        return;
+      }
+      if (id.startsWith("codex_ticket_alert:")) {
+        await alertCustomer(interaction);
+        return;
+      }
+      if (id.startsWith("codex_ticket_close:")) {
         await closeTicket(interaction);
       }
     } catch (e) {
       console.warn("ticket interaction error", e.message);
-      if (interaction.deferred || interaction.replied) {
-        await interaction.followUp({ content: "صار خطأ، حاول مرة ثانية.", ephemeral: true }).catch(() => {});
-      } else {
-        await interaction.reply({ content: "صار خطأ، حاول مرة ثانية.", ephemeral: true }).catch(() => {});
-      }
+      try {
+        if (interaction.deferred || interaction.replied) {
+          await interaction.followUp({
+            content: "صار خطأ، حاول مرة ثانية.",
+            ephemeral: true,
+          });
+        } else {
+          await interaction.reply({
+            content: "صار خطأ، حاول مرة ثانية.",
+            ephemeral: true,
+          });
+        }
+      } catch {}
     }
   });
 
@@ -378,7 +638,6 @@ export async function postTicketPanel(client) {
   const ch = await client.channels.fetch(TICKET_CHANNEL_ID);
   if (!ch?.isTextBased?.()) throw new Error("ticket channel missing");
 
-  // Clear old bot panels (keep history light)
   try {
     const msgs = await ch.messages.fetch({ limit: 15 });
     for (const m of msgs.values()) {
