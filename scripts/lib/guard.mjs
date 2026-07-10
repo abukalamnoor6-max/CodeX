@@ -909,69 +909,185 @@ export function attachGuard(client) {
 
   client.on("roleCreate", async (role) => {
     if (role.guild.id !== GUILD_ID) return;
-    const audit = await getExecutor(role.guild, AuditLogEvent.RoleCreate, role.id);
-    const ex = audit?.executor || null;
+    const audit = await getExecutor(
+      role.guild,
+      AuditLogEvent.RoleCreate,
+      role.id,
+    );
+    const admin = audit?.executor || null;
     await sendLog(
       client,
       "roles",
-      baseEmbed(0x57f287, "➕ إنشاء رتبة").setDescription(
-        [
-          describeAction(ex?.id, "أنشأ رتبة جديدة"),
-          `**الرتبة:** \`${role.name}\``,
-        ].join("\n"),
-      ),
+      new EmbedBuilder()
+        .setColor(0xed4245)
+        .setTitle(`🛡️ تم إنشاء رتبة جديدة \`${role.name}\` !`)
+        .setDescription(
+          [
+            "**معلومات الرتبة**",
+            `الرتبة: <@&${role.id}>`,
+            `اسم الرتبة: \`${role.name}\``,
+            "",
+            "**الأدمن**",
+            `الأدمن: ${admin ? `<@${admin.id}>` : "غير معروف"}`,
+            `مُعرّف الأدمن: \`( ${admin?.id || "—"} )\``,
+            "",
+            "**التوقيت**",
+            `\`${formatLogTime()}\``,
+          ].join("\n"),
+        )
+        .setFooter({ text: "codeX · Roles" })
+        .setTimestamp(),
     );
   });
 
   client.on("roleDelete", async (role) => {
     if (role.guild.id !== GUILD_ID) return;
-    const audit = await getExecutor(role.guild, AuditLogEvent.RoleDelete, role.id);
-    const ex = audit?.executor || null;
+    const audit = await getExecutor(
+      role.guild,
+      AuditLogEvent.RoleDelete,
+      role.id,
+    );
+    const admin = audit?.executor || null;
     await sendLog(
       client,
       "roles",
-      baseEmbed(0xed4245, "➖ حذف رتبة").setDescription(
-        [
-          describeAction(ex?.id, "حذف رتبة"),
-          `**الرتبة:** \`${role.name}\``,
-        ].join("\n"),
-      ),
+      new EmbedBuilder()
+        .setColor(0xed4245)
+        .setTitle(`🗑️ تم حذف رتبة \`${role.name}\` !`)
+        .setDescription(
+          [
+            "**معلومات الرتبة**",
+            `اسم الرتبة: \`${role.name}\``,
+            `مُعرّف الرتبة: \`( ${role.id} )\``,
+            "",
+            "**الأدمن**",
+            `الأدمن: ${admin ? `<@${admin.id}>` : "غير معروف"}`,
+            `مُعرّف الأدمن: \`( ${admin?.id || "—"} )\``,
+            "",
+            "**التوقيت**",
+            `\`${formatLogTime()}\``,
+          ].join("\n"),
+        )
+        .setFooter({ text: "codeX · Roles" })
+        .setTimestamp(),
     );
     await sendLog(
       client,
       "important",
       baseEmbed(0xed4245, "🚨 حذف رتبة").setDescription(
-        `تم حذف \`${role.name}\` بواسطة ${ex ? `<@${ex.id}>` : "—"}`,
+        `تم حذف \`${role.name}\` بواسطة ${admin ? `<@${admin.id}>` : "—"}`,
       ),
     );
   });
 
   client.on("roleUpdate", async (oldRole, newRole) => {
     if (newRole.guild.id !== GUILD_ID) return;
+
+    const nameChanged = oldRole.name !== newRole.name;
+    const colorChanged = oldRole.color !== newRole.color;
+    const hoistChanged = oldRole.hoist !== newRole.hoist;
+    const mentionChanged = oldRole.mentionable !== newRole.mentionable;
+    const iconChanged = (oldRole.icon || "") !== (newRole.icon || "");
     const permChanged =
       oldRole.permissions.bitfield !== newRole.permissions.bitfield;
-    if (!permChanged && oldRole.name === newRole.name) return;
-    const audit = await getExecutor(newRole.guild, AuditLogEvent.RoleUpdate, newRole.id);
-    const ex = audit?.executor || null;
+
+    if (
+      !nameChanged &&
+      !colorChanged &&
+      !hoistChanged &&
+      !mentionChanged &&
+      !iconChanged &&
+      !permChanged
+    ) {
+      return;
+    }
+
+    const audit = await getExecutor(
+      newRole.guild,
+      AuditLogEvent.RoleUpdate,
+      newRole.id,
+    );
+    const admin = audit?.executor || null;
+
+    const changes = [];
+    if (nameChanged) {
+      changes.push({
+        title: "تغيير اسم الرتبة",
+        lines: [
+          `الاسم القديم: \`${oldRole.name}\``,
+          `الاسم الجديد: \`${newRole.name}\``,
+        ],
+      });
+    }
+    if (colorChanged) {
+      changes.push({
+        title: "تغيير لون الرتبة",
+        lines: [
+          `اللون القديم: \`#${oldRole.color.toString(16).padStart(6, "0")}\``,
+          `اللون الجديد: \`#${newRole.color.toString(16).padStart(6, "0")}\``,
+        ],
+      });
+    }
+    if (hoistChanged) {
+      changes.push({
+        title: "تغيير عرض الرتبة منفصلة",
+        lines: [
+          `السابق: \`${oldRole.hoist ? "نعم" : "لا"}\``,
+          `الجديد: \`${newRole.hoist ? "نعم" : "لا"}\``,
+        ],
+      });
+    }
+    if (mentionChanged) {
+      changes.push({
+        title: "تغيير قابلية المنشن",
+        lines: [
+          `السابق: \`${oldRole.mentionable ? "نعم" : "لا"}\``,
+          `الجديد: \`${newRole.mentionable ? "نعم" : "لا"}\``,
+        ],
+      });
+    }
+    if (permChanged) {
+      changes.push({
+        title: "تغيير صلاحيات الرتبة",
+        lines: ["الصلاحيات: `تغيّرت`"],
+      });
+    }
+
+    // One Nova-style update embed (name change primary like screenshot)
+    const primary = changes[0] || {
+      title: "تحديث الرتبة",
+      lines: ["تم تحديث إعدادات الرتبة"],
+    };
+    const extra = changes.slice(1);
+
     await sendLog(
       client,
-      permChanged ? "permissions" : "roles",
-      baseEmbed(0xf0b232, "🔧 تحديث رتبة").setDescription(
-        [
-          describeAction(
-            ex?.id,
-            permChanged ? "عدّل صلاحيات رتبة" : "أعاد تسمية رتبة",
-          ),
-          `**الرتبة:** \`${newRole.name}\``,
-          oldRole.name !== newRole.name
-            ? `**الاسم:** \`${oldRole.name}\` → \`${newRole.name}\``
-            : null,
-          permChanged ? "**الصلاحيات:** تغيّرت" : null,
-        ]
-          .filter(Boolean)
-          .join("\n"),
-      ),
+      permChanged && !nameChanged ? "permissions" : "roles",
+      new EmbedBuilder()
+        .setColor(0xed4245)
+        .setTitle(`🔄 تم تحديث الرتبة \`${newRole.name}\` .`)
+        .setDescription(
+          [
+            "**تفاصيل الرتبة**",
+            `الرتبة: <@&${newRole.id}>`,
+            `الاسم: \`${newRole.name}\``,
+            "",
+            "**تم التحديث بواسطة**",
+            `الأدمن: ${admin ? `<@${admin.id}>` : "غير معروف"}`,
+            `مُعرّف الأدمن: \`( ${admin?.id || "—"} )\``,
+            "",
+            "**وقت التحديث**",
+            `\`${formatLogTime()}\``,
+            "",
+            `**${primary.title}**`,
+            ...primary.lines,
+            ...extra.flatMap((c) => ["", `**${c.title}**`, ...c.lines]),
+          ].join("\n"),
+        )
+        .setFooter({ text: "codeX · Roles" })
+        .setTimestamp(),
     );
+
     if (
       permChanged &&
       (newRole.permissions.has(PermissionFlagsBits.Administrator) ||
@@ -981,7 +1097,7 @@ export function attachGuard(client) {
         client,
         "important",
         baseEmbed(0xed4245, "🚨 صلاحيات رتبة خطرة").setDescription(
-          `\`${newRole.name}\` حصلت على صلاحيات إدارة — بواسطة ${ex ? `<@${ex.id}>` : "—"}`,
+          `\`${newRole.name}\` حصلت على صلاحيات إدارة — بواسطة ${admin ? `<@${admin.id}>` : "—"}`,
         ),
       );
     }
