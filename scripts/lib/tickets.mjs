@@ -526,13 +526,55 @@ async function handleUserModal(interaction, mode) {
 
 async function alertCustomer(interaction) {
   if (!(await requireStaff(interaction))) return;
-  const meta = parseTopic(interaction.channel.topic || "");
+  const channel = interaction.channel;
+  const meta = parseTopic(channel.topic || "");
   if (!meta.owner) {
-    await interaction.reply({ content: "ما لقيت صاحب التذكرة.", flags: MessageFlags.Ephemeral });
+    await interaction.reply({
+      content: "ما لقيت صاحب التذكرة.",
+      flags: MessageFlags.Ephemeral,
+    });
     return;
   }
+
+  const jumpUrl = `https://discord.com/channels/${channel.guildId}/${channel.id}`;
+  let dmOk = false;
+  try {
+    const user = await interaction.client.users.fetch(meta.owner);
+    await user.send({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xed4245)
+          .setTitle("📢 تذكير من دعم codeX")
+          .setDescription(
+            [
+              "فريق الدعم بانتظار ردك على تذكرتك.",
+              "يرجى الرجوع للتذكرة والرد في أقرب وقت.",
+              "",
+              `[افتح التذكرة](${jumpUrl})`,
+            ].join("\n"),
+          )
+          .setFooter({ text: "codeX · Support" })
+          .setTimestamp(),
+      ],
+      components: [
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setLabel("الانتقال للتذكرة")
+            .setStyle(ButtonStyle.Link)
+            .setURL(jumpUrl)
+            .setEmoji("🎫"),
+        ),
+      ],
+    });
+    dmOk = true;
+  } catch (e) {
+    console.warn("alert DM failed", e.message);
+  }
+
   await interaction.reply({
-    content: `📢 <@${meta.owner}> يرجى الرد على التذكرة — فريق الدعم بانتظارك.`,
+    content: dmOk
+      ? `📢 تم إرسال تذكير بالخاص إلى <@${meta.owner}>.`
+      : `⚠️ ما قدرت أرسل خاص لـ <@${meta.owner}> (الخصوصية مقفلة).\nيرجى الرد هنا: <@${meta.owner}> — فريق الدعم بانتظارك.`,
     allowedMentions: { users: [meta.owner] },
   });
 }
