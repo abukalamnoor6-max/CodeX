@@ -613,18 +613,19 @@ export function attachGuard(client) {
     );
   });
 
-  // —— MESSAGE DELETE / UPDATE (accurate cache + actor) ——
+  // —— MESSAGE DELETE / UPDATE (Nova-style) ——
   client.on("messageDelete", async (message) => {
     if (!message.guild || message.guild.id !== GUILD_ID) return;
-
-    // Skip logging inside log channels (noise)
     if (Object.values(LOG_CHANNELS).includes(message.channelId)) return;
 
     const cached = msgCache.get(message.id);
     msgCache.delete(message.id);
 
     const authorId = message.author?.id || cached?.authorId || null;
-    const authorTag = message.author?.tag || cached?.authorTag || null;
+    const authorName =
+      message.author?.username ||
+      cached?.authorTag?.split("#")[0] ||
+      "غير معروف";
     const content = message.content || cached?.content || "";
     const attachments =
       message.attachments?.size
@@ -634,48 +635,55 @@ export function attachGuard(client) {
           }))
         : cached?.attachments || [];
     const isBot = message.author?.bot ?? cached?.bot ?? false;
-
-    // Don't spam logs with our own bot system messages
     if (isBot && authorId === client.user.id) return;
 
-    await new Promise((r) => setTimeout(r, 450)); // audit log lag
+    await new Promise((r) => setTimeout(r, 450));
     const audit = await getExecutor(
       message.guild,
       AuditLogEvent.MessageDelete,
       authorId,
     );
-    const ex = audit?.executor || null;
-
-    let actorId = null;
-    let actionText = "حذف رسالة";
-    if (ex) {
-      actorId = ex.id;
-      if (authorId && ex.id === authorId) {
-        actionText = "حذف رسالته بنفسه";
-      } else {
-        actionText = `حذف رسالة ${authorId ? `<@${authorId}>` : "عضو"}`;
-      }
-    } else if (authorId) {
-      actorId = authorId;
-      actionText = "حذف رسالته بنفسه (غالباً)";
-    }
+    const admin = audit?.executor || (authorId ? { id: authorId } : null);
+    const channelName =
+      message.channel?.name ||
+      message.guild.channels.cache.get(message.channelId)?.name ||
+      "روم";
 
     const attText = formatAttachments(attachments);
+    const body = clip(content || "—", 900);
+
     await sendLog(
       client,
       "chat",
-      baseEmbed(0xf0b232, "🗑️ حذف رسالة").setDescription(
-        [
-          describeAction(actorId, actionText),
-          `**الروم:** <#${message.channelId}>`,
-          `**كاتب الرسالة:** ${authorId ? `<@${authorId}>` : "غير معروف"}${authorTag ? ` (\`${authorTag}\`)` : ""}`,
-          `**آيدي الرسالة:** \`${message.id}\``,
-          `**نص الرسالة:**\n${clip(content || "—", 900)}`,
-          attText ? `**المرفقات:**\n${attText}` : null,
-        ]
-          .filter(Boolean)
-          .join("\n"),
-      ),
+      new EmbedBuilder()
+        .setColor(0xed4245)
+        .setTitle(`🗑️ تم حذف رسالة في #${channelName} !`)
+        .setDescription(
+          [
+            "**صاحب الرسالة**",
+            `الشخص: ${authorId ? `<@${authorId}>` : "غير معروف"}`,
+            `اسم الشخص: \`${authorName}\``,
+            `مُعرّف الشخص: \`( ${authorId || "—"} )\``,
+            "",
+            "**معلومات الرسالة**",
+            `\`${body}\``,
+            attText ? `المرفقات:\n${attText}` : null,
+            "",
+            "**الروم**",
+            `الروم: <#${message.channelId}>`,
+            "",
+            "**الادمن**",
+            `الادمن: ${admin?.id ? `<@${admin.id}>` : "غير معروف"}`,
+            `مُعرّف الادمن: \`( ${admin?.id || "—"} )\``,
+            "",
+            "**التوقيت**",
+            `\`${formatLogTime()}\``,
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        )
+        .setFooter({ text: "codeX · Chat" })
+        .setTimestamp(),
     );
   });
 
@@ -700,20 +708,40 @@ export function attachGuard(client) {
 
     cacheMessage(newMsg);
 
+    const channelName =
+      newMsg.channel?.name ||
+      newMsg.guild.channels.cache.get(newMsg.channelId)?.name ||
+      "روم";
+    const authorName = newMsg.author.username || newMsg.author.tag || "—";
+
     await sendLog(
       client,
       "chat",
-      baseEmbed(0x5865f2, "✏️ تعديل رسالة").setDescription(
-        [
-          describeAction(newMsg.author.id, "عدّل رسالته"),
-          `**الروم:** <#${newMsg.channelId}>`,
-          `**كاتب الرسالة:** <@${newMsg.author.id}> (\`${newMsg.author.tag}\`)`,
-          `**آيدي الرسالة:** \`${newMsg.id}\``,
-          `**قبل التعديل:**\n${clip(before || "—", 700)}`,
-          `**بعد التعديل:**\n${clip(after || "—", 700)}`,
-          `[فتح الرسالة](${newMsg.url})`,
-        ].join("\n"),
-      ),
+      new EmbedBuilder()
+        .setColor(0xed4245)
+        .setTitle(`✏️ تم تعديل رسالة في #${channelName} !`)
+        .setDescription(
+          [
+            "**معلومات الرسالة**",
+            `ايدي الرسالة: \`${newMsg.id}\``,
+            `رابط الرسالة: [اذهب إلى الرسالة](${newMsg.url})`,
+            "",
+            "**صاحب الرسالة**",
+            `الشخص: <@${newMsg.author.id}>`,
+            `اسم الشخص: \`${authorName}\``,
+            "",
+            "**الرسالة القديمة**",
+            `\`${clip(before || "—", 700)}\``,
+            "",
+            "**الرسالة الجديدة**",
+            `\`${clip(after || "—", 700)}\``,
+            "",
+            "**التوقيت**",
+            `\`${formatLogTime()}\``,
+          ].join("\n"),
+        )
+        .setFooter({ text: "codeX · Chat" })
+        .setTimestamp(),
     );
   });
 
