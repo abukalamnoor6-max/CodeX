@@ -146,17 +146,16 @@ function ticketEmbed({ opener, type, claimedById }) {
       name: opener.tag || opener.username,
       iconURL: opener.displayAvatarURL?.({ size: 64 }) || undefined,
     })
-    .addFields(
-      {
-        name: "فئة التذكرة",
-        value: type.categoryLabel || type.label,
-        inline: true,
-      },
-      {
-        name: "مسؤول التذكرة",
-        value: manager,
-        inline: true,
-      },
+    .setTitle(`تذكرة ${type.label}`)
+    .setDescription(
+      [
+        `**فئة التذكرة:** ${type.categoryLabel || type.label}`,
+        `**مسؤول التذكرة:** ${manager}`,
+        "",
+        "اكتب تفاصيل طلبك هنا في هالروم.",
+        "المساعد الذكي بيرد عليك أولاً.",
+        "إذا احتجت موظف: اضغط زر **تحويل لدعم بشري** تحت رد المساعد.",
+      ].join("\n"),
     )
     .setFooter({ text: "codeX Store" })
     .setTimestamp();
@@ -316,7 +315,7 @@ export async function openTicket(interaction, typeKey) {
   const staffMentions = STAFF_ROLE_IDS.map((id) => `<@&${id}>`).join(" ");
 
   await channel.send({
-    content: `${staffMentions}`,
+    content: `${staffMentions} | <@${interaction.user.id}>`,
     embeds: [
       ticketEmbed({
         opener: interaction.user,
@@ -325,15 +324,10 @@ export async function openTicket(interaction, typeKey) {
       }),
     ],
     components: [staffControlsRow(interaction.user.id)],
-    allowedMentions: { roles: STAFF_ROLE_IDS },
-  });
-
-  await channel.send({
-    content: [
-      `<@${interaction.user.id}> اكتب تفاصيل طلبك هنا.`,
-      "المساعد الذكي بيرد عليك أولاً — وإذا احتجت موظف اضغط **تحويل لدعم بشري**.",
-    ].join("\n"),
-    allowedMentions: { users: [interaction.user.id] },
+    allowedMentions: {
+      roles: STAFF_ROLE_IDS,
+      users: [interaction.user.id],
+    },
   });
 
   await sendTicketLog(
