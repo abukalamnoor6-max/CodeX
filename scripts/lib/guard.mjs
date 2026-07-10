@@ -425,10 +425,64 @@ export function attachGuard(client) {
     }
   });
 
-  // —— LEAVE ——
+  // —— LEAVE / KICK ——
   client.on("guildMemberRemove", async (member) => {
     if (member.guild.id !== GUILD_ID) return;
-    const username = member.user?.username || member.user?.tag || String(member.id);
+    const username =
+      member.user?.username || member.user?.tag || String(member.id);
+    const display =
+      member.displayName || member.user?.globalName || username;
+
+    // audit log lag
+    await new Promise((r) => setTimeout(r, 550));
+
+    const banAudit = await getExecutor(
+      member.guild,
+      AuditLogEvent.MemberBanAdd,
+      member.id,
+      { windowMs: 8_000 },
+    );
+    // Ban has its own log — skip leave/kick duplicate
+    if (banAudit) return;
+
+    const kickAudit = await getExecutor(
+      member.guild,
+      AuditLogEvent.MemberKick,
+      member.id,
+      { windowMs: 8_000 },
+    );
+
+    if (kickAudit) {
+      const admin = kickAudit.executor || null;
+      const reason = kickAudit.reason?.trim() || "لم يتم تقديم سبب";
+      await sendLog(
+        client,
+        "ban",
+        new EmbedBuilder()
+          .setColor(0xed4245)
+          .setTitle("تم طرد عضو من codeX! 🦿")
+          .setDescription(
+            [
+              "**معلومات العضو**",
+              `العضو: <@${member.id}>`,
+              `اسم العضو: \`${display}\``,
+              "",
+              "**تم الطرد بواسطة**",
+              `الادمن: ${admin ? `<@${admin.id}>` : "غير معروف"}`,
+              `معرّف الادمن: \`( ${admin?.id || "—"} )\``,
+              "",
+              "**السبب**",
+              reason,
+              "",
+              "**التوقيت**",
+              `\`${formatLogTime()}\``,
+            ].join("\n"),
+          )
+          .setFooter({ text: "codeX · Kick" })
+          .setTimestamp(),
+      );
+      return;
+    }
 
     await sendLog(
       client,
