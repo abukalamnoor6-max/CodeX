@@ -23,6 +23,7 @@ import {
 } from "./lib/welcome.mjs";
 import { attachTickets, postTicketPanel } from "./lib/tickets.mjs";
 import { attachDividerCommand } from "./lib/divider-command.mjs";
+import { attachRmzBridge } from "./lib/rmz-bridge.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -119,6 +120,7 @@ const client = new Client({
 attachGuard(client);
 attachTickets(client);
 attachDividerCommand(client);
+attachRmzBridge(client);
 
 client.on("guildMemberAdd", async (member) => {
   if (member.guild.id !== GUILD_ID) return;
