@@ -349,8 +349,23 @@ export async function openTicket(interaction, typeKey) {
       .setTimestamp(),
   );
 
+  const jumpUrl = `https://discord.com/channels/${guild.id}/${channel.id}`;
+  const jumpRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setLabel("الانتقال للتذكرة")
+      .setStyle(ButtonStyle.Link)
+      .setURL(jumpUrl)
+      .setEmoji("🎫"),
+  );
+
   await interaction.editReply({
-    content: `تم فتح تذكرتك: ${channel}`,
+    content: [
+      `✅ تم فتح تذكرتك`,
+      `${channel}`,
+      "",
+      "اضغط الزر تحت للانتقال مباشرة:",
+    ].join("\n"),
+    components: [jumpRow],
   });
 
   try {
