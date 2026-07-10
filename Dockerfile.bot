@@ -1,0 +1,24 @@
+# codeX Delivery Bot — Railway / Render
+FROM node:20-bookworm-slim
+
+WORKDIR /app
+
+# Native deps for @napi-rs/canvas
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    fontconfig \
+    fonts-dejavu-core \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY package.json package-lock.json* ./
+RUN npm install --omit=dev
+
+COPY scripts ./scripts
+COPY public/discord ./public/discord
+COPY discord ./discord
+
+ENV NODE_ENV=production
+ENV PORT=8787
+EXPOSE 8787
+
+CMD ["npm", "run", "bot"]

@@ -1,0 +1,20 @@
+services:
+  - type: worker
+    name: codex-delivery-bot
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm run bot
+    envVars:
+      - key: DISCORD_BOT_TOKEN
+        sync: false
+      - key: DISCORD_GUILD_ID
+        value: "1524901009195798679"
+      - key: DISCORD_OWNER_ID
+        value: "1210972261968912425"
+      - key: DISCORD_DELIVERY_CHANNEL_ID
+        value: "1524961264869310494"
+      - key: DISCORD_REVIEWS_CHANNEL_ID
+        value: "1524981051787837540"
+      - key: NEXT_PUBLIC_SITE_URL
+        value: "https://codex-theta-two.vercel.app"

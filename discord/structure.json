@@ -1,0 +1,52 @@
+{
+  "name": "codeX | Store",
+  "brandColor": "#0059db",
+  "storeUrl": "https://codexshop112.rmz.gg",
+  "roles": [
+    { "name": "👑 Owner", "color": "#ef4444", "hoist": true, "permissions": "ADMINISTRATOR" },
+    { "name": "🛠️ Admin", "color": "#f97316", "hoist": true },
+    { "name": "💼 Support", "color": "#22c55e", "hoist": true },
+    { "name": "🎨 Designer", "color": "#a855f7", "hoist": true },
+    { "name": "💻 Developer", "color": "#06b6d4", "hoist": true },
+    { "name": "⭐ VIP", "color": "#eab308", "hoist": true },
+    { "name": "🛒 Customer", "color": "#3b82f6", "hoist": true },
+    { "name": "👤 Member", "color": "#94a3b8", "hoist": false },
+    { "name": "🤖 Bot", "color": "#64748b", "hoist": false }
+  ],
+  "categories": [
+    {
+      "name": "📣 │ المعلومات",
+      "channels": [
+        { "name": "👋│الترحيب", "type": "text", "readonly": true, "message": "welcome" },
+        { "name": "📜│القوانين", "type": "text", "readonly": true, "message": "rules" },
+        { "name": "🛒│المتجر", "type": "text", "readonly": true, "message": "store" },
+        { "name": "📢│الإعلانات", "type": "text", "readonly": true },
+        { "name": "🎁│العروض", "type": "text", "readonly": true }
+      ]
+    },
+    {
+      "name": "🎫 │ التذاكر والدعم",
+      "channels": [
+        { "name": "🎫│فتح-تذكرة", "type": "text", "readonly": false, "message": "tickets" },
+        { "name": "✅│تم-التسليم", "type": "text", "readonly": true }
+      ]
+    },
+    {
+      "name": "💬 │ المجتمع",
+      "channels": [
+        { "name": "💬│شات-عام", "type": "text" },
+        { "name": "🖼️│شوف-شغلك", "type": "text" },
+        { "name": "💡│اقتراحات", "type": "text" }
+      ]
+    },
+    {
+      "name": "🔒 │ الطاقم",
+      "staffOnly": true,
+      "channels": [
+        { "name": "staff│الشات", "type": "text" },
+        { "name": "staff│الطلبات", "type": "text" },
+        { "name": "staff│اللوقات", "type": "text" }
+      ]
+    }
+  ]
+}

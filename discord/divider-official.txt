@@ -1,0 +1,3 @@
+﻿official_divider=public/discord/codex-divider-official.png
+source=discord attachment approved by user
+updated=2026-07-10

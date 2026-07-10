@@ -1,0 +1,9 @@
+﻿.rmz-browser-profile
+scripts
+rmz-payload.json
+rmz-paste-guide.txt
+rmz-design*.png
+rmz-*.png
+!public/discord/**
+!public/products/**
+!public/logo*
