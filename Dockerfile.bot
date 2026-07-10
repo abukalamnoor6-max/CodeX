@@ -1,17 +1,17 @@
-# codeX Delivery Bot — Railway / Render
+# codeX Discord bot only (not the Next.js site)
 FROM node:20-bookworm-slim
 
 WORKDIR /app
 
-# Native deps for @napi-rs/canvas
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     fontconfig \
     fonts-dejavu-core \
+    fonts-noto-core \
   && rm -rf /var/lib/apt/lists/*
 
-COPY package.json package-lock.json* ./
-RUN npm install --omit=dev
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 
 COPY scripts ./scripts
 COPY public/discord ./public/discord
@@ -21,4 +21,4 @@ ENV NODE_ENV=production
 ENV PORT=8787
 EXPOSE 8787
 
-CMD ["npm", "run", "bot"]
+CMD ["node", "scripts/codex-delivery-bot.mjs"]
