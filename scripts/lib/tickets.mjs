@@ -591,8 +591,15 @@ export async function closeTicketByChannel({
     collected.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
 
     for (const m of collected) {
-      const time = new Date(m.createdTimestamp).toLocaleString("ar-SA", {
+      const time = new Date(m.createdTimestamp).toLocaleString("en-GB", {
         timeZone: "Asia/Riyadh",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
       });
       const author = `${m.author?.tag || "unknown"} (${m.author?.id || "?"})`;
       const content = m.content || "";
@@ -626,12 +633,18 @@ export async function closeTicketByChannel({
       lines.push("");
     }
 
-    const buf = Buffer.from(lines.join("\n"), "utf8");
+    // UTF-8 BOM so Windows Notepad / Discord download opens Arabic correctly
+    const body = lines.join("\r\n");
+    const buf = Buffer.concat([
+      Buffer.from([0xef, 0xbb, 0xbf]),
+      Buffer.from(body, "utf8"),
+    ]);
     const safeName = channel.name
-      .replace(/[^\w\u0600-\u06ff-]+/g, "_")
-      .slice(0, 40);
+      .replace(/[^\w-]+/g, "_")
+      .replace(/_+/g, "_")
+      .slice(0, 40) || "ticket";
     transcriptFile = new AttachmentBuilder(buf, {
-      name: `ticket-${safeName}-${Date.now()}.txt`,
+      name: `codex-ticket-${safeName}-${Date.now()}.txt`,
     });
   } catch (e) {
     console.warn("transcript failed", e.message);
