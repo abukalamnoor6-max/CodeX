@@ -8,6 +8,7 @@ import {
   ButtonStyle,
   Events,
   AttachmentBuilder,
+  MessageFlags,
 } from "discord.js";
 import fs from "fs";
 import http from "http";
@@ -463,20 +464,20 @@ client.on(Events.InteractionCreate, async (interaction) => {
         content: statusEntry.sendRating
           ? "✅ تم التسليم، وانرسل للعميل رسالة تقييم بالنجوم."
           : "✅ تم تحديث الحالة وإرسال خاص للعميل.",
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     } catch {
       await interaction.followUp({
         content:
           "⚠️ تم تحديث الحالة، لكن ما قدرت أرسل خاص للعميل (الخصوصية مقفلة أو اليوزر غير موجود).",
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
   } else {
     await interaction.followUp({
       content:
         "⚠️ تم تحديث الحالة، لكن ما لقيت آيدي دسكورد العميل لإرسال الخاص.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 });

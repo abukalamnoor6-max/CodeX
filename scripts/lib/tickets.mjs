@@ -15,6 +15,7 @@ import {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  MessageFlags,
 } from "discord.js";
 import fs from "fs";
 import path from "path";
@@ -268,11 +269,11 @@ function ticketOverwrites(guild, openerId, botId) {
 export async function openTicket(interaction, typeKey) {
   const type = TICKET_TYPES[typeKey];
   if (!type) {
-    await interaction.reply({ content: "خيار غير معروف.", ephemeral: true });
+    await interaction.reply({ content: "خيار غير معروف.", flags: MessageFlags.Ephemeral });
     return;
   }
 
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const guild = interaction.guild;
   await guild.channels.fetch();
@@ -379,7 +380,7 @@ async function requireStaff(interaction) {
   if (isStaffMember(interaction.member)) return true;
   await interaction.reply({
     content: "هالزر للطاقم فقط.",
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
   return false;
 }
@@ -393,7 +394,7 @@ async function claimTicket(interaction) {
   if (meta.claimed && meta.claimed !== interaction.user.id) {
     await interaction.reply({
       content: `التذكرة مستلمة مسبقاً من <@${meta.claimed}>`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -463,7 +464,7 @@ async function handleUserModal(interaction, mode) {
   if (!(await requireStaff(interaction))) return;
   const userId = extractUserId(interaction.fields.getTextInputValue("user_id"));
   if (!userId) {
-    await interaction.reply({ content: "آيدي غير صحيح.", ephemeral: true });
+    await interaction.reply({ content: "آيدي غير صحيح.", flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -495,7 +496,7 @@ async function handleUserModal(interaction, mode) {
       if (userId === meta.owner) {
         await interaction.reply({
           content: "ما تقدر تشيل صاحب التذكرة.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
         return;
       }
@@ -517,7 +518,7 @@ async function handleUserModal(interaction, mode) {
   } catch (e) {
     await interaction.reply({
       content: `فشل التعديل: ${e.message}`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 }
@@ -526,7 +527,7 @@ async function alertCustomer(interaction) {
   if (!(await requireStaff(interaction))) return;
   const meta = parseTopic(interaction.channel.topic || "");
   if (!meta.owner) {
-    await interaction.reply({ content: "ما لقيت صاحب التذكرة.", ephemeral: true });
+    await interaction.reply({ content: "ما لقيت صاحب التذكرة.", flags: MessageFlags.Ephemeral });
     return;
   }
   await interaction.reply({
@@ -546,7 +547,7 @@ export async function closeTicket(interaction) {
   if (!isOwner && !staff) {
     await interaction.reply({
       content: "ما تقدر تغلق هالتذكرة.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -634,12 +635,12 @@ export function attachTickets(client) {
         if (interaction.deferred || interaction.replied) {
           await interaction.followUp({
             content: "صار خطأ، حاول مرة ثانية.",
-            ephemeral: true,
+            flags: MessageFlags.Ephemeral,
           });
         } else {
           await interaction.reply({
             content: "صار خطأ، حاول مرة ثانية.",
-            ephemeral: true,
+            flags: MessageFlags.Ephemeral,
           });
         }
       } catch {}
