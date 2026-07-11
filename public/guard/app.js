@@ -36,9 +36,9 @@ async function boot() {
     setStatus(true, `متصل · ${overview.bot?.tag || 'بوت'}`);
     renderGuilds();
     statsEl.innerHTML = `
-      <div>حماية تفعّلت: <b>${overview.stats.protectionsTriggered}</b></div>
-      <div>برودكاست نجح: <b>${overview.stats.broadcastsSent}</b></div>
-      <div>فشل DM: <b>${overview.stats.dmsFailed}</b></div>
+      <div>حماية تفعّلت: <b>${overview.stats.protectionsTriggered || 0}</b></div>
+      <div>برودكاست نجح: <b>${overview.stats.broadcastsSent || 0}</b></div>
+      <div>فشل DM: <b>${overview.stats.dmsFailed || 0}</b></div>
     `;
     if (overview.guilds[0]) selectGuild(overview.guilds[0].id);
   } catch (e) {
@@ -100,7 +100,10 @@ function renderPanel() {
   const g = guildData;
   panelEl.innerHTML = `
     <div class="head">
-      <h1>${escapeHtml(g.name)}</h1>
+      <div>
+        <h1>${escapeHtml(g.name)}</h1>
+        <p>${g.members} عضو · اختر القسم من التبويبات</p>
+      </div>
       <div class="tabs">
         <button class="tab ${tab === 'protections' ? 'active' : ''}" data-tab="protections">الحماية</button>
         <button class="tab ${tab === 'broadcast' ? 'active' : ''}" data-tab="broadcast">البرودكاست</button>
@@ -125,29 +128,42 @@ function renderPanel() {
 
 function renderProtections(body) {
   const meta = overview.protections || [];
+  const groups = {};
+  for (const p of meta) {
+    const g = p.group || 'عام';
+    if (!groups[g]) groups[g] = [];
+    groups[g].push(p);
+  }
+  const enabledCount = meta.filter((p) => gProtection(p.key)?.enabled).length;
+
   body.innerHTML = `
-    <div class="row" style="margin-bottom:0.8rem">
-      <div></div>
-      <div style="display:flex;gap:0.4rem">
+    <div class="toolbar">
+      <div class="count">${enabledCount} / ${meta.length} نظام مفعّل</div>
+      <div class="actions">
         <button class="btn" id="all-on">تفعيل الكل</button>
         <button class="btn" id="all-off">إيقاف الكل</button>
       </div>
     </div>
-    <div class="grid">
-      ${meta.map((p) => {
-        const on = !!gProtection(p.key)?.enabled;
-        return `
-          <div class="card">
-            <h3>${escapeHtml(p.name)}</h3>
-            <p>${escapeHtml(p.key)}</p>
-            <div class="row">
-              <span>${on ? 'مفعّل' : 'متوقف'}</span>
-              <button class="switch ${on ? 'on' : ''}" data-key="${p.key}"><i></i></button>
-            </div>
-          </div>`;
-      }).join('')}
-    </div>
+    ${Object.entries(groups).map(([group, items]) => `
+      <div class="group">
+        <h2>${escapeHtml(group)}</h2>
+        <div class="plist">
+          ${items.map((p) => {
+            const on = !!gProtection(p.key)?.enabled;
+            return `
+              <div class="prow">
+                <div>
+                  <h3>${escapeHtml(p.name)}</h3>
+                  <p>${escapeHtml(p.key)}</p>
+                </div>
+                <button class="switch ${on ? 'on' : ''}" data-key="${p.key}" aria-label="${escapeAttr(p.name)}"><i></i></button>
+              </div>`;
+          }).join('')}
+        </div>
+      </div>
+    `).join('')}
   `;
+
   body.querySelectorAll('.switch').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const key = btn.dataset.key;

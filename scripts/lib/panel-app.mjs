@@ -3,27 +3,10 @@ import { fileURLToPath } from "url";
 import express from "express";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
+import { PROTECTION_META } from "./protection-meta.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const GUARD_PUBLIC = path.resolve(__dirname, "../../public/guard");
-
-const PROTECTION_META = [
-  { key: "antiRaid", name: "منع الهجمات الجماعية" },
-  { key: "antiSpam", name: "منع السبام" },
-  { key: "antiFlood", name: "منع التكرار" },
-  { key: "antiLink", name: "منع الروابط" },
-  { key: "antiInvite", name: "منع دعوات السيرفرات" },
-  { key: "antiToxic", name: "منع الكلمات المسيئة" },
-  { key: "antiBot", name: "منع البوتات" },
-  { key: "antiAlts", name: "منع الحسابات الوهمية" },
-  { key: "antiWebhook", name: "منع الويهوك" },
-  { key: "antiChannelDelete", name: "حماية الرومات" },
-  { key: "antiRoleDelete", name: "حماية الرتب" },
-  { key: "antiBan", name: "منع الحظر غير المصرح" },
-  { key: "antiKick", name: "منع الطرد غير المصرح" },
-  { key: "antiMassBan", name: "منع الحظر الجماعي" },
-  { key: "antiMassKick", name: "منع الطرد الجماعي" },
-];
 
 export function createPanelApp({
   client,
