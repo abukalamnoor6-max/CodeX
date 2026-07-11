@@ -96,8 +96,9 @@ export function createPanelApp({
       settings: {
         protections,
         broadcast: store.data.broadcast,
-        logChannelId: null,
-        exemptRoles: [],
+        logChannelId: store.data.settings?.logChannelId || null,
+        exemptRoles: store.data.settings?.exemptRoles || [],
+        exemptUsers: store.data.settings?.exemptUsers || [],
       },
       job: broadcast.getJob(guild.id),
       roles: guild.roles.cache
@@ -132,11 +133,28 @@ export function createPanelApp({
   });
 
   api.patch("/guilds/:id/settings", (req, res) => {
+    if (!store.data.settings) store.data.settings = {};
+    if (req.body.logChannelId !== undefined) {
+      store.data.settings.logChannelId = req.body.logChannelId || null;
+    }
+    if (Array.isArray(req.body.exemptRoles)) {
+      store.data.settings.exemptRoles = req.body.exemptRoles;
+    }
+    if (Array.isArray(req.body.exemptUsers)) {
+      store.data.settings.exemptUsers = req.body.exemptUsers;
+    }
     if (req.body.broadcast) {
       store.data.broadcast = { ...store.data.broadcast, ...req.body.broadcast };
     }
     store.save();
-    res.json({ ok: true, settings: store.data });
+    res.json({
+      ok: true,
+      settings: {
+        ...store.data.settings,
+        broadcast: store.data.broadcast,
+        protections: store.data.protections,
+      },
+    });
   });
 
   api.get("/logs", (req, res) => {

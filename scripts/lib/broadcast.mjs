@@ -90,7 +90,13 @@ export function createBroadcastService({ client, store, ownerId }) {
         await Promise.all(
           chunk.map(async (m) => {
             try {
-              await m.send({ content });
+              const personalized = String(content || "")
+                .replaceAll("{منشن}", `<@${m.id}>`)
+                .replaceAll("{mention}", `<@${m.id}>`)
+                .replaceAll("{user}", `${m}`)
+                .replaceAll("{name}", m.displayName || m.user.username)
+                .replaceAll("{username}", m.user.username);
+              await m.send({ content: personalized });
               job.sent += 1;
               store.data.stats.broadcastsSent += 1;
             } catch {

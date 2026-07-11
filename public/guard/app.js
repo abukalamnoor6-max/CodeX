@@ -199,7 +199,10 @@ function renderBroadcast(body) {
   body.innerHTML = `
     <div class="form">
       <label>نص البرودكاست</label>
-      <textarea id="bc-text" placeholder="اكتب الرسالة…"></textarea>
+      <textarea id="bc-text" placeholder="مثال: مرحباً {منشن}، عندنا عرض جديد…"></textarea>
+      <p class="hint" style="color:var(--muted);font-size:0.8rem;margin:0">
+        رموز جاهزة: <code>{منشن}</code> · <code>{name}</code> · <code>{username}</code>
+      </p>
       <label>اختر العملية</label>
       <div class="bc-options" id="bc-options">
         <button type="button" class="bc-opt active" data-filter="all">📬 إرسال للجميع</button>

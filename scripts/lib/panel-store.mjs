@@ -9,6 +9,11 @@ const FILE = path.join(ROOT, "data", "guard-panel.json");
 function defaults() {
   return {
     protections: {},
+    settings: {
+      logChannelId: null,
+      exemptRoles: [],
+      exemptUsers: [],
+    },
     broadcast: {
       allowedRoles: [],
       cooldownMs: 60000,
@@ -29,7 +34,16 @@ export function createPanelStore() {
   }
   let data = defaults();
   try {
-    if (fs.existsSync(FILE)) data = { ...defaults(), ...JSON.parse(fs.readFileSync(FILE, "utf8")) };
+    if (fs.existsSync(FILE)) {
+      const loaded = JSON.parse(fs.readFileSync(FILE, "utf8"));
+      data = {
+        ...defaults(),
+        ...loaded,
+        settings: { ...defaults().settings, ...(loaded.settings || {}) },
+        broadcast: { ...defaults().broadcast, ...(loaded.broadcast || {}) },
+        stats: { ...defaults().stats, ...(loaded.stats || {}) },
+      };
+    }
   } catch {
     /* keep defaults */
   }
