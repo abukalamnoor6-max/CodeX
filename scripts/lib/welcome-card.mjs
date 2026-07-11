@@ -9,77 +9,208 @@ const ROOT = path.resolve(__dirname, "../..");
 const W = 1100;
 const H = 400;
 
-const FONT_REGULAR = "CodeXArabic";
-const FONT_BOLD = "CodeXArabicBold";
+const AR_REG = "CodeXAr";
+const AR_BOLD = "CodeXArBold";
+const LAT_REG = "CodeXLat";
+const LAT_BOLD = "CodeXLatBold";
 let fontsReady = false;
 
-function registerArabicFonts() {
-  if (fontsReady) return true;
-
-  const files = [
-    {
-      path: path.join(ROOT, "public", "fonts", "NotoSansArabic-Regular.ttf"),
-      name: FONT_REGULAR,
-    },
-    {
-      path: path.join(ROOT, "public", "fonts", "NotoSansArabic-Bold.ttf"),
-      name: FONT_BOLD,
-    },
-    {
-      path: "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
-      name: FONT_REGULAR,
-    },
-    {
-      path: "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf",
-      name: FONT_BOLD,
-    },
-    {
-      path: "/usr/share/fonts/truetype/amiri/Amiri-Regular.ttf",
-      name: FONT_REGULAR,
-    },
-    {
-      path: "/usr/share/fonts/truetype/amiri/Amiri-Bold.ttf",
-      name: FONT_BOLD,
-    },
-  ];
-
-  const got = new Set();
-  for (const f of files) {
-    if (got.has(f.name)) continue;
-    try {
-      if (!fs.existsSync(f.path)) continue;
-      GlobalFonts.registerFromPath(f.path, f.name);
-      got.add(f.name);
-    } catch (e) {
-      console.warn("font register failed", f.path, e.message);
-    }
+function tryRegister(file, name, got) {
+  if (got.has(name)) return;
+  try {
+    if (!fs.existsSync(file)) return;
+    GlobalFonts.registerFromPath(file, name);
+    got.add(name);
+  } catch (e) {
+    console.warn("font register failed", file, e.message);
   }
-
-  if (!got.has(FONT_REGULAR)) {
-    console.warn(
-      "No Arabic font found — welcome card text may render as boxes",
-    );
-    return false;
-  }
-
-  // If bold missing, reuse regular for bold requests
-  if (!got.has(FONT_BOLD) && got.has(FONT_REGULAR)) {
-    try {
-      const reg = files.find(
-        (x) => x.name === FONT_REGULAR && fs.existsSync(x.path),
-      );
-      if (reg) GlobalFonts.registerFromPath(reg.path, FONT_BOLD);
-    } catch {}
-  }
-
-  fontsReady = true;
-  return true;
 }
 
-function font(weight, size) {
-  registerArabicFonts();
-  const family = weight === "bold" ? FONT_BOLD : FONT_REGULAR;
-  return `${size}px "${family}", "Noto Sans Arabic", "Segoe UI", Tahoma, sans-serif`;
+function registerFonts() {
+  if (fontsReady) return true;
+  const got = new Set();
+  const fontsDir = path.join(ROOT, "public", "fonts");
+
+  tryRegister(path.join(fontsDir, "NotoSansArabic-Regular.ttf"), AR_REG, got);
+  tryRegister(path.join(fontsDir, "NotoSansArabic-Bold.ttf"), AR_BOLD, got);
+  tryRegister(path.join(fontsDir, "NotoSans-Regular.ttf"), LAT_REG, got);
+  tryRegister(path.join(fontsDir, "NotoSans-Bold.ttf"), LAT_BOLD, got);
+
+  // Linux fallbacks
+  tryRegister("/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf", AR_REG, got);
+  tryRegister("/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf", AR_BOLD, got);
+  tryRegister("/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf", LAT_REG, got);
+  tryRegister("/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf", LAT_BOLD, got);
+  tryRegister("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", LAT_REG, got);
+  tryRegister("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", LAT_BOLD, got);
+  tryRegister("/usr/share/fonts/truetype/amiri/Amiri-Regular.ttf", AR_REG, got);
+  tryRegister("/usr/share/fonts/truetype/amiri/Amiri-Bold.ttf", AR_BOLD, got);
+
+  if (!got.has(AR_BOLD) && got.has(AR_REG)) {
+    tryRegister(path.join(fontsDir, "NotoSansArabic-Regular.ttf"), AR_BOLD, got);
+  }
+  if (!got.has(LAT_BOLD) && got.has(LAT_REG)) {
+    tryRegister(path.join(fontsDir, "NotoSans-Regular.ttf"), LAT_BOLD, got);
+  }
+  if (!got.has(LAT_REG) && got.has(AR_REG)) {
+    // last resort: reuse arabic family name slot with same file (may still miss fancy glyphs)
+    got.add(LAT_REG);
+  }
+
+  fontsReady = got.has(AR_REG) || got.has(LAT_REG);
+  if (!fontsReady) console.warn("No fonts registered for welcome card");
+  return fontsReady;
+}
+
+/** Convert Mathematical Alphanumeric + fancy separators to plain text */
+export function normalizeFancyText(input) {
+  let out = "";
+  for (const ch of String(input || "")) {
+    const c = ch.codePointAt(0);
+    const mapRange = (start, latin) => {
+      if (c >= start && c < start + 26) return String.fromCharCode(latin + (c - start));
+      return null;
+    };
+    let mapped =
+      mapRange(0x1d400, 65) || // bold A
+      mapRange(0x1d41a, 97) || // bold a
+      mapRange(0x1d434, 65) || // italic A
+      mapRange(0x1d44e, 97) ||
+      mapRange(0x1d468, 65) || // bold italic A
+      mapRange(0x1d482, 97) ||
+      mapRange(0x1d4d0, 65) || // bold script
+      mapRange(0x1d4ea, 97) ||
+      mapRange(0x1d56c, 65) || // bold fraktur
+      mapRange(0x1d586, 97) ||
+      mapRange(0x1d5a0, 65) || // sans
+      mapRange(0x1d5ba, 97) ||
+      mapRange(0x1d5d4, 65) || // sans bold
+      mapRange(0x1d5ee, 97) ||
+      mapRange(0x1d608, 65) || // sans italic
+      mapRange(0x1d622, 97) ||
+      mapRange(0x1d63c, 65) || // sans bold italic
+      mapRange(0x1d656, 97) ||
+      mapRange(0x1d670, 65) || // monospace
+      mapRange(0x1d68a, 97);
+
+    if (mapped) {
+      out += mapped;
+      continue;
+    }
+    if (ch === "〢" || ch === "│" || ch === "丨") {
+      out += "|";
+      continue;
+    }
+    if (ch === "—" || ch === "–" || ch === "−") {
+      out += "-";
+      continue;
+    }
+    if (ch === "…" ) {
+      out += "...";
+      continue;
+    }
+    out += ch;
+  }
+  return out.normalize("NFC");
+}
+
+function isArabicChar(ch) {
+  const c = ch.codePointAt(0);
+  return (
+    (c >= 0x0600 && c <= 0x06ff) ||
+    (c >= 0x0750 && c <= 0x077f) ||
+    (c >= 0x08a0 && c <= 0x08ff) ||
+    (c >= 0xfb50 && c <= 0xfdff) ||
+    (c >= 0xfe70 && c <= 0xfeff)
+  );
+}
+
+function isLatinOrDigit(ch) {
+  const c = ch.codePointAt(0);
+  return (
+    (c >= 0x30 && c <= 0x39) ||
+    (c >= 0x41 && c <= 0x5a) ||
+    (c >= 0x61 && c <= 0x7a) ||
+    ch === "@" ||
+    ch === "#" ||
+    ch === "_" ||
+    ch === "." ||
+    ch === "-" ||
+    ch === "|" ||
+    ch === ":" ||
+    ch === "/" ||
+    ch === "\\"
+  );
+}
+
+function splitRuns(text) {
+  const runs = [];
+  let buf = "";
+  let kind = null; // "ar" | "lat" | "other"
+  const kindOf = (ch) => {
+    if (isArabicChar(ch)) return "ar";
+    if (isLatinOrDigit(ch)) return "lat";
+    if (/\s/.test(ch)) return kind || "other";
+    return "other";
+  };
+  for (const ch of text) {
+    const k = kindOf(ch);
+    const use = k === "other" && kind ? kind : k;
+    if (kind === null) {
+      kind = use;
+      buf = ch;
+    } else if (use === kind || (k === "other" && kind)) {
+      buf += ch;
+    } else {
+      runs.push({ kind, text: buf });
+      kind = use;
+      buf = ch;
+    }
+  }
+  if (buf) runs.push({ kind: kind || "other", text: buf });
+  return runs;
+}
+
+function fontFor(kind, weight, size) {
+  registerFonts();
+  const bold = weight === "bold";
+  if (kind === "ar") {
+    const fam = bold ? AR_BOLD : AR_REG;
+    return `${size}px "${fam}"`;
+  }
+  const fam = bold ? LAT_BOLD : LAT_REG;
+  // if latin missing, fall back to arabic family
+  return `${size}px "${fam}", "${bold ? AR_BOLD : AR_REG}"`;
+}
+
+function measureMixed(ctx, text, weight, size) {
+  let w = 0;
+  for (const run of splitRuns(text)) {
+    ctx.font = fontFor(run.kind === "ar" ? "ar" : "lat", weight, size);
+    w += ctx.measureText(run.text).width;
+  }
+  return w;
+}
+
+/** Draw RTL-aligned mixed Arabic/Latin text without missing-glyph boxes */
+function fillMixedRight(ctx, text, rightX, y, weight, size, maxWidth) {
+  let t = normalizeFancyText(text);
+  // fit
+  while (t.length > 1 && measureMixed(ctx, t, weight, size) > maxWidth) {
+    t = `${t.slice(0, -2)}…`;
+  }
+
+  const runs = splitRuns(t);
+  // For right-aligned line: draw from right to left in visual order
+  let x = rightX;
+  ctx.textAlign = "right";
+  ctx.direction = "ltr"; // we position manually
+  for (const run of runs) {
+    const kind = run.kind === "ar" ? "ar" : "lat";
+    ctx.font = fontFor(kind, weight, size);
+    ctx.fillText(run.text, x, y);
+    x -= ctx.measureText(run.text).width;
+  }
 }
 
 function drawStar(ctx, x, y, outerR, innerR, fill) {
@@ -110,15 +241,6 @@ function roundRectPath(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-function fitText(ctx, text, maxWidth) {
-  let t = String(text || "");
-  if (ctx.measureText(t).width <= maxWidth) return t;
-  while (t.length > 1 && ctx.measureText(`${t}…`).width > maxWidth) {
-    t = t.slice(0, -1);
-  }
-  return `${t}…`;
-}
-
 /**
  * Black starfield welcome card — avatar + name + Arabic welcome.
  */
@@ -128,16 +250,14 @@ export async function renderWelcomeCard({
   avatarUrl,
   memberCount,
 }) {
-  registerArabicFonts();
+  registerFonts();
 
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext("2d");
 
-  // Solid black background
   ctx.fillStyle = "#000000";
   ctx.fillRect(0, 0, W, H);
 
-  // Soft navy vignette (very subtle depth)
   const vg = ctx.createRadialGradient(
     W * 0.35,
     H * 0.5,
@@ -151,7 +271,6 @@ export async function renderWelcomeCard({
   ctx.fillStyle = vg;
   ctx.fillRect(0, 0, W, H);
 
-  // White starfield
   const count = Math.floor((W * H) / 700);
   for (let i = 0; i < count; i++) {
     const x = Math.random() * W;
@@ -163,7 +282,6 @@ export async function renderWelcomeCard({
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();
   }
-  // Brighter stars
   for (let i = 0; i < 28; i++) {
     const x = Math.random() * W;
     const y = Math.random() * H;
@@ -172,8 +290,7 @@ export async function renderWelcomeCard({
     ctx.arc(x, y, Math.random() * 2 + 0.7, 0, Math.PI * 2);
     ctx.fill();
   }
-  // A few pointed stars
-  const pointed = [
+  for (const [x, y, r] of [
     [90, 50, 6],
     [180, 30, 4],
     [980, 40, 5],
@@ -182,18 +299,15 @@ export async function renderWelcomeCard({
     [1020, 350, 6],
     [520, 28, 3],
     [760, 370, 4],
-  ];
-  for (const [x, y, r] of pointed) {
+  ]) {
     drawStar(ctx, x, y, r, r * 0.42, "rgba(255,255,255,0.85)");
   }
 
-  // Soft panel edge (subtle)
   roundRectPath(ctx, 18, 18, W - 36, H - 36, 22);
   ctx.strokeStyle = "rgba(255,255,255,0.08)";
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  // Avatar
   const ax = 160;
   const ay = H / 2;
   const ar = 92;
@@ -226,7 +340,6 @@ export async function renderWelcomeCard({
     ctx.fill();
   }
 
-  // Logo
   try {
     const logo = await loadImage(
       path.join(ROOT, "public", "discord", "codex-logo-source.png"),
@@ -240,37 +353,33 @@ export async function renderWelcomeCard({
     // optional
   }
 
-  // Text — Arabic font registered for Railway/Linux
-  ctx.textAlign = "right";
-  ctx.direction = "rtl";
+  const right = W - 64;
+  const cleanName = normalizeFancyText(
+    displayName || username || "عضو جديد",
+  );
+  const cleanUser = normalizeFancyText(username || "");
 
   ctx.fillStyle = "#f5f5f5";
-  ctx.font = font("bold", 40);
-  ctx.fillText("أهلاً بك في codeX", W - 64, 120);
+  fillMixedRight(ctx, "أهلاً بك في codeX", right, 120, "bold", 40, 720);
 
-  const name = displayName || username || "عضو جديد";
   ctx.fillStyle = "#ffffff";
-  ctx.font = font("bold", 34);
-  ctx.fillText(fitText(ctx, name, 680), W - 64, 175);
+  fillMixedRight(ctx, cleanName, right, 175, "bold", 34, 680);
 
   ctx.fillStyle = "rgba(210,210,220,0.9)";
-  ctx.font = font("normal", 22);
-  ctx.fillText(`@${fitText(ctx, username || "", 560)}`, W - 64, 215);
+  fillMixedRight(ctx, `@${cleanUser}`, right, 215, "normal", 22, 560);
 
-  ctx.font = font("normal", 24);
   ctx.fillStyle = "rgba(230,230,235,0.95)";
   const lines = [
     "نورت السيرفر",
-    "سعداء بانضمامك — فريق codeX معك",
+    "سعداء بانضمامك - فريق codeX معك",
     memberCount ? `أنت العضو رقم ${memberCount}` : null,
   ].filter(Boolean);
   let ly = 270;
   for (const line of lines) {
-    ctx.fillText(line, W - 64, ly);
+    fillMixedRight(ctx, line, right, ly, "normal", 24, 720);
     ly += 34;
   }
 
-  // Accent bar
   ctx.fillStyle = "rgba(255,255,255,0.35)";
   ctx.fillRect(32, 56, 3, H - 112);
 

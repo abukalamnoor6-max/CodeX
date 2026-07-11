@@ -1,5 +1,5 @@
 import { AttachmentBuilder, EmbedBuilder } from "discord.js";
-import { renderWelcomeCard } from "./welcome-card.mjs";
+import { renderWelcomeCard, normalizeFancyText } from "./welcome-card.mjs";
 
 export const WELCOME_CHANNEL_ID =
   process.env.DISCORD_WELCOME_CHANNEL_ID || "1524961216097816717";
@@ -63,8 +63,10 @@ export async function sendWelcome(member) {
   });
 
   const png = await renderWelcomeCard({
-    displayName: member.displayName || member.user.globalName || member.user.username,
-    username: member.user.username,
+    displayName: normalizeFancyText(
+      member.displayName || member.user.globalName || member.user.username,
+    ),
+    username: normalizeFancyText(member.user.username),
     avatarUrl,
     memberCount: member.guild.memberCount,
   });
