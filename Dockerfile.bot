@@ -17,6 +17,7 @@ RUN npm ci --omit=dev
 COPY scripts ./scripts
 COPY public/discord ./public/discord
 COPY public/fonts ./public/fonts
+COPY public/guard ./public/guard
 COPY discord ./discord
 
 ENV NODE_ENV=production

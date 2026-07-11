@@ -11,7 +11,6 @@ import {
   MessageFlags,
 } from "discord.js";
 import fs from "fs";
-import http from "http";
 import path from "path";
 import { fileURLToPath } from "url";
 import { attachGuard, LOG_CHANNELS } from "./lib/guard.mjs";
@@ -24,11 +23,14 @@ import {
 import { attachTickets, postTicketPanel } from "./lib/tickets.mjs";
 import { attachDividerCommand } from "./lib/divider-command.mjs";
 import { attachTicketAi } from "./lib/ticket-ai.mjs";
+import { attachCodexLogs, setupLogRooms } from "./lib/codex-logs.mjs";
+import { createPanelStore } from "./lib/panel-store.mjs";
+import { createBroadcastService } from "./lib/broadcast.mjs";
 import {
-  attachCodexLogs,
-  registerLogCommands,
-  setupLogRooms,
-} from "./lib/codex-logs.mjs";
+  attachBroadcastUi,
+  registerPanelCommands,
+} from "./lib/broadcast-ui.mjs";
+import { createPanelApp } from "./lib/panel-app.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -37,6 +39,11 @@ const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const GUILD_ID = process.env.DISCORD_GUILD_ID || "1524901009195798679";
 const OWNER_ID = process.env.DISCORD_OWNER_ID || "1210972261968912425";
 const PORT = Number(process.env.PORT || process.env.CODEX_BOT_PORT || 8787);
+const API_KEY =
+  process.env.GUARD_API_KEY ||
+  process.env.API_KEY ||
+  process.env.DISCORD_OWNER_ID ||
+  "codex-guard";
 const WAITING_URL =
   process.env.DISCORD_WAITING_URL ||
   "https://discord.com/channels/1524901009195798679/1524971494663258235";
@@ -129,6 +136,21 @@ const client = new Client({
 
 attachGuard(client);
 attachCodexLogs(client, { guildId: GUILD_ID, ownerId: OWNER_ID });
+
+const panelStore = createPanelStore();
+const broadcast = createBroadcastService({
+  client,
+  store: panelStore,
+  ownerId: OWNER_ID,
+});
+attachBroadcastUi({
+  client,
+  store: panelStore,
+  broadcast,
+  ownerId: OWNER_ID,
+  guildId: GUILD_ID,
+});
+
 attachTickets(client);
 attachTicketAi(client);
 attachDividerCommand(client);
@@ -318,10 +340,10 @@ client.once("clientReady", async () => {
   console.log("bot ready as", client.user.tag);
   saveMeta();
   try {
-    await registerLogCommands(client, GUILD_ID);
-    console.log("log slash commands registered");
+    await registerPanelCommands(client, GUILD_ID);
+    console.log("panel slash commands registered");
   } catch (e) {
-    console.warn("log commands failed", e.message);
+    console.warn("panel commands failed", e.message);
   }
 
   if (process.env.CODEX_SETUP_LOGS === "1") {
@@ -515,32 +537,17 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
-const server = http.createServer(async (req, res) => {
-  if (req.method === "POST" && req.url === "/delivery-order") {
-    let body = "";
-    req.on("data", (c) => (body += c));
-    req.on("end", async () => {
-      try {
-        const order = JSON.parse(body || "{}");
-        if (!order.orderId) throw new Error("orderId required");
-        const result = await postDeliveryOrder(order);
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true, ...result }));
-      } catch (e) {
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: false, error: e.message }));
-      }
-    });
-    return;
-  }
-  if (req.method === "GET" && req.url === "/health") {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ ok: true, user: client.user?.tag || null }));
-    return;
-  }
-  res.writeHead(404);
-  res.end("not found");
+const panelApp = createPanelApp({
+  client,
+  store: panelStore,
+  broadcast,
+  apiKey: API_KEY,
+  guildId: GUILD_ID,
+  postDeliveryOrder,
 });
 
-server.listen(PORT, () => console.log("http bridge on", PORT));
+panelApp.listen(PORT, "0.0.0.0", () => {
+  console.log("http panel on", PORT);
+  console.log("dashboard: /  |  health: /health  |  api: /api/*");
+});
 client.login(TOKEN);
