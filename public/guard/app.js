@@ -285,10 +285,20 @@ function renderBroadcast(body) {
 }
 function renderSettings(body) {
   const s = guildData.settings;
+  const channels = guildData.channels || [];
   body.innerHTML = `
     <div class="form">
-      <label>روم اللوق (ID)</label>
-      <input id="log-channel" value="${escapeAttr(s.logChannelId || '')}" placeholder="Channel ID" />
+      <label>روم لوقات الحماية</label>
+      <select id="log-channel">
+        <option value="">— اختر روم —</option>
+        ${channels.map((c) => `
+          <option value="${c.id}" ${s.logChannelId === c.id ? 'selected' : ''}>
+            #${escapeHtml(c.name)}
+          </option>`).join('')}
+      </select>
+      <p class="hint" style="color:var(--muted);font-size:0.8rem;margin:0">
+        هنا توصل تنبيهات الحماية (سبام، روابط، دعوات…)
+      </p>
       <label>رتب مستثناة من الحماية (IDs مفصولة بفاصلة)</label>
       <input id="exempt-roles" value="${escapeAttr((s.exemptRoles || []).join(','))}" />
       <label>رتب مسموح لها بالبرودكاست</label>
@@ -315,7 +325,7 @@ function renderSettings(body) {
       }),
     });
     await refreshGuild({ full: true });
-    alert('تم الحفظ');
+    alert('تم الحفظ — لوقات الحماية بتروح للروم المحدد');
   };
 }
 

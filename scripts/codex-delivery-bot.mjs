@@ -134,10 +134,13 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message, Partials.GuildMember],
 });
 
-attachGuard(client);
+const panelStore = createPanelStore();
+
+attachGuard(client, {
+  getLogChannelId: () => panelStore.data.settings?.logChannelId || null,
+});
 attachCodexLogs(client, { guildId: GUILD_ID, ownerId: OWNER_ID });
 
-const panelStore = createPanelStore();
 const broadcast = createBroadcastService({
   client,
   store: panelStore,

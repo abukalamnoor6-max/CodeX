@@ -105,7 +105,24 @@ function takeBucket(map, key, windowMs) {
 }
 
 async function sendLog(client, key, embed) {
-  // Full CodeX logs module owns channel logs when enabled
+  // روم اللوق من لوحة التحكم (إن وُجد)
+  const customId =
+    typeof globalThis.__CODEX_GUARD_LOG_CHANNEL__ === "function"
+      ? globalThis.__CODEX_GUARD_LOG_CHANNEL__()
+      : null;
+  if (customId) {
+    try {
+      const ch = await client.channels.fetch(String(customId));
+      if (ch?.isTextBased?.()) {
+        await ch.send({ embeds: [embed] });
+        return;
+      }
+    } catch (e) {
+      console.warn("protection log fail", e.message);
+    }
+  }
+
+  // اللوقات القديمة تتعطّل إذا شغّال نظام اللوقات الكامل
   if (process.env.DISABLE_GUARD_LOGS === "1") return;
   const id = LOG_CHANNELS[key];
   if (!id) return;
@@ -358,7 +375,11 @@ async function resolveJoinInvite(guild) {
   return used;
 }
 
-export function attachGuard(client) {
+export function attachGuard(client, options = {}) {
+  if (typeof options.getLogChannelId === "function") {
+    globalThis.__CODEX_GUARD_LOG_CHANNEL__ = options.getLogChannelId;
+  }
+
   client.once("clientReady", async () => {
     const guild = client.guilds.cache.get(GUILD_ID);
     if (guild) await cacheGuildInvites(guild);
