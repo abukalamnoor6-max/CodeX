@@ -88,7 +88,9 @@ function isStaffMember(member) {
 function isTicketChannel(channel) {
   if (!channel || channel.type !== ChannelType.GuildText) return false;
   const topic = channel.topic || "";
-  return topic.includes("owner:") && !channel.name.startsWith("مغلق-");
+  if (!topic.includes("owner:")) return false;
+  if (channel.name.startsWith("مغلق-") || channel.name.startsWith("🔒")) return false;
+  return true;
 }
 
 function humanRequestRow(ownerId) {
@@ -101,68 +103,136 @@ function humanRequestRow(ownerId) {
   );
 }
 
-async function callLlm({ system, messages }) {
+function extractJsonObject(raw) {
+  const text = String(raw || "").trim();
+  try {
+    return JSON.parse(text);
+  } catch {}
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced) {
+    try {
+      return JSON.parse(fenced[1].trim());
+    } catch {}
+  }
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    try {
+      return JSON.parse(text.slice(start, end + 1));
+    } catch {}
+  }
+  return { reply: text.slice(0, 1800), suggest_human: false, close_ticket: false };
+}
+
+async function callLlmOnce({ system, messages, jsonMode }) {
+  const body = {
+    model: MODEL,
+    temperature: 0.35,
+    messages: [{ role: "system", content: system }, ...messages],
+  };
+  if (jsonMode) body.response_format = { type: "json_object" };
+
   const res = await fetch(`${BASE_URL}/chat/completions`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${API_KEY}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model: MODEL,
-      temperature: 0.1,
-      response_format: { type: "json_object" },
-      messages: [{ role: "system", content: system }, ...messages],
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`LLM ${res.status}: ${text.slice(0, 200)}`);
+    throw new Error(`LLM ${res.status}: ${text.slice(0, 300)}`);
   }
 
   const data = await res.json();
-  const raw = data?.choices?.[0]?.message?.content || "{}";
+  const raw = data?.choices?.[0]?.message?.content || "";
+  return extractJsonObject(raw);
+}
+
+async function callLlm({ system, messages }) {
   try {
-    return JSON.parse(raw);
-  } catch {
-    return { reply: raw.slice(0, 1800), escalate: false };
+    return await callLlmOnce({ system, messages, jsonMode: true });
+  } catch (e1) {
+    console.warn("ticket AI jsonMode failed, retry plain:", e1.message);
+    return await callLlmOnce({ system, messages, jsonMode: false });
   }
 }
 
-function buildSystemPrompt(ticketType) {
+function localFallbackReply(userText) {
+  const t = String(userText || "").toLowerCase();
+  if (/خدم|منتج|وش عندكم|ما ?هي|ماهي|أسعار|سعر|price|services?/.test(t)) {
+    return {
+      reply: [
+        "خدمات codeX:",
+        "• برمجة فايف إم — 800 ر.س",
+        "• مابات فايف إم بشعار سيرفرك — 80 ر.س",
+        "• سيارة خاصة — 375 ر.س",
+        "• بوت ديسكورد: متقدم 125 / متوسط 75 / أساسي 30 ر.س",
+        "• برمجة سيرفر ديسكورد كامل — 200 ر.س",
+        "• باقات خاص المتجر: 100 / 250 / 500 / 1000 ر.س",
+        "",
+        "المتجر: https://codexshop112.rmz.gg",
+        "للتفاصيل الدقيقة اضغط زر تحويل لدعم بشري.",
+      ].join("\n"),
+      suggest_human: true,
+    };
+  }
+  if (/ماستر|فيزا|بطاقة|دفع|paypal|مدى|apple ?pay/.test(t)) {
+    return {
+      reply: [
+        "فهمت — مشكلة دفع.",
+        "أرسل لو تقدر:",
+        "1) وسيلة الدفع (ماستر/فيزا/PayPal/...)",
+        "2) رسالة الخطأ أو لقطة شاشة",
+        "3) رقم الطلب إن وجد",
+        "",
+        "وبعدها الأفضل تضغط تحويل لدعم بشري عشان يراجعون معك.",
+      ].join("\n"),
+      suggest_human: true,
+    };
+  }
+  return {
+    reply:
+      "حالياً الرد الآلي متأخر. اكتب سؤالك باختصار، أو اضغط زر تحويل لدعم بشري.",
+    suggest_human: true,
+  };
+}
+
+function buildSystemPrompt(ticketType, lastAssistantReply = "") {
   const knowledge = loadKnowledge();
   const typeLabel = TYPE_LABELS[ticketType] || ticketType;
   return [
     "أنت مساعد دعم codeX داخل تذكرة ديسكورد.",
     `نوع التذكرة الحالية: ${typeLabel}`,
     "",
-    "قواعد إلزامية (أخطر من أي شيء آخر):",
-    "1) جاوب فقط من قاعدة المعرفة. ممنوع الاختراع أو التخمين أو اختلاق سياسة.",
-    "2) إذا التفصيلة غير مكتوبة بوضوح: لا تعطِ جواباً قاطعاً. اقترح زر «تحويل لدعم بشري» — بدون إجبار.",
-    "3) خدمات codeX مخصصة للعميل: العميل يختار المتطلبات (شعار/تصميم/وصف)، والفريق ينفّذ.",
-    "4) ممنوع تقول إن الفريق يفرض التصميم ويرفض اختيار العميل.",
-    "5) مابات فايف إم بشعار سيرفرك = بشعار العميل. سيارة خاصة = العميل يحدد التصميم/المرجع.",
-    "6) لا تعد بتنفيذ/تسليم/استرجاع/تعويض بنفسك.",
-    "7) رتبة العميل: حساب المتجر ← مزاياي ← ربط Discord.",
-    "8) لأي تفاصيل زيادة: اقترح الزر فقط. التحويل الفعلي بالزر فقط، مو تلقائي. لا تختلق تفاصيل.",
+    "قواعد إلزامية:",
+    "1) جاوب فقط من قاعدة المعرفة. ممنوع الاختراع.",
+    "2) لا تكرر نفس الرد السابق أبداً. إذا العميل أعطى معلومة جديدة، ابنِ عليها ورد بشكل مختلف.",
+    "3) إذا سأل عن الخدمات/الأسعار: اعرض القائمة من قاعدة المعرفة مباشرة.",
+    "4) إذا مشكلة دفع وذكر وسيلة معيّنة (مثل ماستركارد): اعترف بالمعلومة واطلب لقطة/رسالة الخطأ أو رقم الطلب، ثم اقترح زر الدعم البشري.",
+    "5) منتجات مخصصة للعميل (ماب/سيارة/بوت) = حسب طلب العميل.",
+    "6) رتبة العميل: المتجر ← مزاياي ← ربط Discord.",
+    "7) التحويل البشري اختياري عبر الزر فقط.",
+    "8) للإغلاق الصريح فقط: close_ticket=true.",
     "",
-    "أجب دائماً بصيغة JSON فقط:",
-    '{"reply":"نص الرد للعميل بالعربية","suggest_human":false,"close_ticket":false}',
+    lastAssistantReply
+      ? `آخر رد لك (ممنوع تكراره):\n"""${lastAssistantReply.slice(0, 500)}"""`
+      : "",
     "",
-    "إذا التفاصيل زيادة أو مو متأكد: اكتب في reply إن الأفضل الضغط على زر «تحويل لدعم بشري» — لكن لا تجبر التحويل.",
-    "ضع suggest_human=true فقط كتذكير داخلي؛ التحويل الفعلي يتم بالزر فقط.",
-    "إذا طلب العميل إغلاق/سكّر/اقفل التذكرة بوضوح: close_ticket=true واكتب في reply تأكيد قصير أنك راح تسكرها.",
-    "لا تغلق التذكرة من نفسك بدون طلب صريح من العميل.",
-    "لا تذكر JSON للعميل.",
+    "أجب JSON فقط:",
+    '{"reply":"نص عربي مختصر","suggest_human":false,"close_ticket":false}',
     "",
     "=== قاعدة المعرفة ===",
     knowledge,
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
-async function collectHistory(channel, limit = 12) {
-  const msgs = await channel.messages.fetch({ limit: 30 });
+async function collectHistory(channel, limit = 14) {
+  const msgs = await channel.messages.fetch({ limit: 40 });
   const sorted = [...msgs.values()].sort(
     (a, b) => a.createdTimestamp - b.createdTimestamp,
   );
@@ -172,9 +242,15 @@ async function collectHistory(channel, limit = 12) {
     if (m.author.bot && m.author.id !== channel.client.user.id) continue;
     let content = m.content.trim();
     if (content.startsWith("👤") || content.startsWith("✅ استلم")) continue;
-    if (m.author.bot && content.includes("تم التحويل للدعم البشري")) continue;
+    if (content.includes("تم التحويل للدعم البشري")) continue;
+    if (content.includes("تعذر الرد الآلي")) continue;
+    if (content.includes("جاري حفظ الأرشيف")) continue;
+    // skip staff ping opener lines
+    if (/^<@&\d+>/.test(content) && content.length < 120) continue;
     const role =
       m.author.id === channel.client.user.id ? "assistant" : "user";
+    // skip very first bot embed-only style short system lines
+    if (role === "assistant" && content.includes("اكتب تفاصيل طلبك هنا")) continue;
     out.push({
       role,
       content: content.slice(0, 1200),
@@ -268,12 +344,39 @@ async function replyWithAi(message) {
     await channel.sendTyping().catch(() => {});
 
     const history = await collectHistory(channel);
-    const system = buildSystemPrompt(meta.type);
-    const result = await callLlm({ system, messages: history });
+    const lastAssistant =
+      [...history].reverse().find((m) => m.role === "assistant")?.content || "";
+    const system = buildSystemPrompt(meta.type, lastAssistant);
 
-    const reply = String(result?.reply || "").trim().slice(0, 1900);
-    const closeTicket =
-      wantsCloseTicket(message.content, Boolean(result?.close_ticket));
+    let result;
+    try {
+      result = await callLlm({ system, messages: history });
+    } catch (e) {
+      console.warn("ticket AI LLM error:", e.message);
+      result = localFallbackReply(message.content);
+    }
+
+    let reply = String(result?.reply || "").trim().slice(0, 1900);
+    if (!reply) result = localFallbackReply(message.content);
+    reply = String(result?.reply || "").trim().slice(0, 1900);
+
+    // if model repeated previous answer, use fallback tailored to latest message
+    if (
+      lastAssistant &&
+      reply &&
+      (reply === lastAssistant ||
+        (reply.length > 40 &&
+          lastAssistant.includes(reply.slice(0, 40)) &&
+          reply.includes(lastAssistant.slice(0, 40))))
+    ) {
+      result = localFallbackReply(message.content);
+      reply = String(result.reply).trim().slice(0, 1900);
+    }
+
+    const closeTicket = wantsCloseTicket(
+      message.content,
+      Boolean(result?.close_ticket),
+    );
 
     const freshChannel = await channel.fetch();
     const fresh = parseTopic(freshChannel.topic || channel.topic || "");
@@ -304,9 +407,9 @@ async function replyWithAi(message) {
   } catch (e) {
     console.warn("ticket AI failed", e.message);
     try {
+      const fb = localFallbackReply(message.content);
       await message.channel.send({
-        content:
-          "تعذر الرد الآلي حالياً. اضغط الزر تحت أو انتظر فريق الدعم.",
+        content: fb.reply,
         components: [
           humanRequestRow(
             parseTopic(message.channel.topic || "").owner || message.author.id,
