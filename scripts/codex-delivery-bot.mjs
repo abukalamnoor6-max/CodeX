@@ -24,6 +24,11 @@ import {
 import { attachTickets, postTicketPanel } from "./lib/tickets.mjs";
 import { attachDividerCommand } from "./lib/divider-command.mjs";
 import { attachTicketAi } from "./lib/ticket-ai.mjs";
+import {
+  attachCodexLogs,
+  registerLogCommands,
+  setupLogRooms,
+} from "./lib/codex-logs.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -114,11 +119,16 @@ const client = new Client({
     GatewayIntentBits.GuildInvites,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.DirectMessages,
+    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.GuildPresences,
+    GatewayIntentBits.GuildWebhooks,
+    GatewayIntentBits.AutoModerationExecution,
   ],
   partials: [Partials.Channel, Partials.Message, Partials.GuildMember],
 });
 
 attachGuard(client);
+attachCodexLogs(client, { guildId: GUILD_ID, ownerId: OWNER_ID });
 attachTickets(client);
 attachTicketAi(client);
 attachDividerCommand(client);
@@ -307,6 +317,24 @@ function saveMeta() {
 client.once("clientReady", async () => {
   console.log("bot ready as", client.user.tag);
   saveMeta();
+  try {
+    await registerLogCommands(client, GUILD_ID);
+    console.log("log slash commands registered");
+  } catch (e) {
+    console.warn("log commands failed", e.message);
+  }
+
+  if (process.env.CODEX_SETUP_LOGS === "1") {
+    try {
+      const guild = await client.guilds.fetch(GUILD_ID);
+      await guild.channels.fetch();
+      const created = await setupLogRooms(guild, client);
+      console.log("log rooms:", created.length);
+    } catch (e) {
+      console.warn("setup logs failed", e.message);
+    }
+  }
+
   if (!meta.deliveryChannelId) {
     const guild = await client.guilds.fetch(GUILD_ID);
     await guild.channels.fetch();

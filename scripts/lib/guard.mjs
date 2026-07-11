@@ -105,6 +105,8 @@ function takeBucket(map, key, windowMs) {
 }
 
 async function sendLog(client, key, embed) {
+  // Full CodeX logs module owns channel logs when enabled
+  if (process.env.DISABLE_GUARD_LOGS === "1") return;
   const id = LOG_CHANNELS[key];
   if (!id) return;
   try {
