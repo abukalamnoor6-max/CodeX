@@ -46,7 +46,8 @@ export const TICKET_TYPES = {
     value: "inquiry",
     label: "استفسار",
     categoryLabel: "للاستفسار و المشاكل",
-    emoji: "💬",
+    emoji: "🎧",
+    channelEmoji: "🎧",
     description: "سؤال عن المتجر أو المنتجات أو الخدمات",
     color: 0x5865f2,
     prefix: "استفسار",
@@ -55,7 +56,8 @@ export const TICKET_TYPES = {
     value: "delivery",
     label: "استلام طلب",
     categoryLabel: "استلام طلب",
-    emoji: "📦",
+    emoji: "💵",
+    channelEmoji: "💵",
     description: "جاهز تستلم طلبك أو تتابع التسليم",
     color: 0x57f287,
     prefix: "استلام",
@@ -64,12 +66,23 @@ export const TICKET_TYPES = {
     value: "problem",
     label: "مشكلة",
     categoryLabel: "للاستفسار و المشاكل",
-    emoji: "⚠️",
+    emoji: "🛑",
+    channelEmoji: "🛑",
     description: "مشكلة في طلب أو منتج أو الدفع",
     color: 0xed4245,
     prefix: "مشكلة",
   },
 };
+
+function ticketChannelName(type, username) {
+  const short =
+    String(username || "user")
+      .toLowerCase()
+      .replace(/[^a-z0-9_\u0600-\u06ff]/gi, "")
+      .slice(0, 20) || "user";
+  // مثال: [💵] । · njli_2
+  return `[${type.channelEmoji || type.emoji}] । · ${short}`.slice(0, 100);
+}
 
 function bannerPath() {
   return path.join(ROOT, "public", "discord", "codex-ticket-banner.png");
@@ -279,7 +292,8 @@ export async function openTicket(interaction, typeKey) {
     (c) =>
       c.type === ChannelType.GuildText &&
       c.topic?.includes(`owner:${interaction.user.id}`) &&
-      !c.name.startsWith("مغلق-"),
+      !c.name.startsWith("مغلق-") &&
+      !c.name.startsWith("🔒"),
   );
   if (existing) {
     await interaction.editReply({
@@ -291,12 +305,7 @@ export async function openTicket(interaction, typeKey) {
   const cat = await ensureTicketCategory(guild);
   const me = await guild.members.fetchMe();
 
-  const short =
-    interaction.user.username
-      .toLowerCase()
-      .replace(/[^a-z0-9\u0600-\u06ff]/gi, "")
-      .slice(0, 12) || "user";
-  const name = `${type.prefix}-${short}`.slice(0, 90);
+  const name = ticketChannelName(type, interaction.user.username);
 
   const channel = await guild.channels.create({
     name,
@@ -720,7 +729,7 @@ export async function closeTicketByChannel({
   }
 
   try {
-    await channel.setName(`مغلق-${channel.name}`.slice(0, 90));
+    await channel.setName(`🔒 ${channel.name}`.slice(0, 100));
   } catch {}
 
   setTimeout(async () => {
