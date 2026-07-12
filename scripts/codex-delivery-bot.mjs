@@ -56,7 +56,7 @@ const PUBLIC_BASE_URL = (
   process.env.PUBLIC_BASE_URL ||
   (process.env.RAILWAY_PUBLIC_DOMAIN
     ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-    : "")
+    : "https://codex-delivery-bot-production.up.railway.app")
 ).replace(/\/$/, "");
 const PAYPAL_NOTIFY_CHANNEL_ID =
   process.env.PAYPAL_NOTIFY_CHANNEL_ID ||

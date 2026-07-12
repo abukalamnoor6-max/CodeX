@@ -150,7 +150,12 @@ export function createPanelApp({
       });
     } catch (e) {
       console.error("paypal capture failed:", e.message, e.issue || "");
-      res.status(400).json({ ok: false, error: e.message });
+      // Still tell client ok-ish so UI can leave checkout; webhook may settle
+      res.status(200).json({
+        ok: true,
+        status: "PENDING_SETTLEMENT",
+        warning: e.message,
+      });
     }
   });
 
@@ -570,6 +575,21 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
   apply(lang);
 
   function showErr(msg){ err.style.display='block'; err.textContent=msg||t().fail; }
+  function successUrl(orderId){
+    var q = new URLSearchParams({
+      amount: amount,
+      name: name,
+      user: discordUser,
+      lang: lang
+    });
+    if (orderId) q.set('token', orderId);
+    return '/pay/success?' + q.toString();
+  }
+  try {
+    sessionStorage.setItem('codex_pay_meta', JSON.stringify({
+      amount: amount, name: name, user: discordUser, lang: lang
+    }));
+  } catch (e) {}
 
   function createOrder(){
     return fetch('/paypal/order', {
@@ -579,41 +599,33 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     }).then(function(r){ return r.json().then(function(j){ if(!r.ok||!j.id) throw new Error(j.error||t().createFail); return j.id; }); });
   }
   function onApprove(data){
-    var successUrl = '/pay/success?' + new URLSearchParams({
-      amount: amount,
-      name: name,
-      user: discordUser,
-      lang: lang
-    }).toString();
-    return fetch('/paypal/capture', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ orderID: data.orderID })
-    }).then(function(r){
-      return r.json().catch(function(){ return {}; }).then(function(j){
-        var ok = r.ok || (j && (j.ok || j.status === 'COMPLETED' || j.status === 'APPROVED'));
-        if (ok) {
-          window.location.replace(successUrl);
-          return;
-        }
-        // PayPal approved in UI — still send buyer to thank-you; webhook may finish settle
-        if (data && data.orderID) {
-          window.location.replace(successUrl);
-          return;
-        }
-        throw new Error((j && j.error) || t().captureFail);
-      });
-    }).catch(function(e){
-      // If capture network-fails after buyer paid, still show success page
-      if (data && data.orderID) {
-        window.location.replace(successUrl);
-        return;
-      }
-      showErr((e && e.message) || t().errPay);
-    });
+    var orderId = (data && data.orderID) || '';
+    var url = successUrl(orderId);
+    // Capture in background; always leave checkout so buyer sees thank-you
+    try {
+      fetch('/paypal/capture', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ orderID: orderId }),
+        keepalive: true
+      }).catch(function(){});
+    } catch (e) {}
+    window.location.replace(url);
+    return Promise.resolve();
   }
   function onError(e){ showErr((e&&e.message)||t().errPay); }
   function onCancel(){ showErr(t().cancel); }
+
+  // PayPal card/redirect sometimes returns here with ?token=&PayerID=
+  try {
+    var params = new URLSearchParams(location.search);
+    var retToken = params.get('token') || params.get('orderID');
+    var payer = params.get('PayerID') || params.get('payerId');
+    if (retToken && payer) {
+      window.location.replace(successUrl(retToken));
+      return;
+    }
+  } catch (e) {}
 
   if (paypal.Buttons) {
     paypal.Buttons({
@@ -730,6 +742,22 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
   // Checkout gate: Discord OAuth (username + Client role), then PayPal
   app.get("/pay", async (req, res) => {
     try {
+      // PayPal full-page return after card/wallet approve
+      const retToken = String(req.query.token || req.query.orderID || "").trim();
+      const payerId = String(
+        req.query.PayerID || req.query.payerId || "",
+      ).trim();
+      if (retToken && payerId) {
+        const q = new URLSearchParams({
+          token: retToken,
+          lang:
+            String(req.query.lang || "").toLowerCase() === "en" ? "en" : "ar",
+        });
+        if (req.query.amount) q.set("amount", String(req.query.amount));
+        if (req.query.name) q.set("name", String(req.query.name));
+        if (req.query.user) q.set("user", String(req.query.user));
+        return res.redirect(302, `/pay/success?${q.toString()}`);
+      }
       if (!paypalPayments) {
         return res
           .status(503)
@@ -891,7 +919,17 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     }
   });
 
-  app.get("/pay/success", (req, res) => {
+  app.get("/pay/success", async (req, res) => {
+    const token = String(req.query.token || req.query.orderID || "").trim();
+    // Settle capture if PayPal returned an order token (card/redirect flows)
+    if (token && paypalPayments) {
+      try {
+        await paypalPayments.captureOrder(token);
+      } catch (e) {
+        console.warn("pay/success capture:", e.message || e);
+      }
+    }
+
     const lang = String(req.query.lang || "").toLowerCase() === "en" ? "en" : "ar";
     const amount = String(req.query.amount || "").trim();
     const name = String(req.query.name || "").trim();
@@ -899,7 +937,9 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       .trim()
       .replace(/^@+/, "");
     const amountLabel = amount
-      ? `${escapeHtml(Number(amount).toFixed ? Number(amount).toFixed(2) : amount)} USD`
+      ? `${escapeHtml(
+          Number.isFinite(Number(amount)) ? Number(amount).toFixed(2) : amount,
+        )} USD`
       : "";
     const safeName = escapeHtml(name || (lang === "en" ? "your order" : "طلبك"));
     const safeUser = escapeHtml(user);
@@ -923,19 +963,18 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
             next: "راح يوصلك تأكيد على دسكورد قريب ونبدأ التسليم.",
             tip: "خلّ تنبيهات دسكورد مفتوحة.",
           };
+    const hasDetails = Boolean(name || amountLabel || user);
     const details = [
       name
-        ? `<div class="row"><span>${copy.order}</span><strong>${safeName}</strong></div>`
-        : "",
+        ? `<div class="row" id="rowOrder"><span>${copy.order}</span><strong id="vOrder">${safeName}</strong></div>`
+        : `<div class="row" id="rowOrder" hidden><span>${copy.order}</span><strong id="vOrder"></strong></div>`,
       amountLabel
-        ? `<div class="row"><span>${copy.amount}</span><strong>${amountLabel}</strong></div>`
-        : "",
+        ? `<div class="row" id="rowAmount"><span>${copy.amount}</span><strong id="vAmount">${amountLabel}</strong></div>`
+        : `<div class="row" id="rowAmount" hidden><span>${copy.amount}</span><strong id="vAmount"></strong></div>`,
       user
-        ? `<div class="row"><span>${copy.deliver}</span><strong>@${safeUser}</strong></div>`
-        : "",
-    ]
-      .filter(Boolean)
-      .join("");
+        ? `<div class="row" id="rowUser"><span>${copy.deliver}</span><strong id="vUser">@${safeUser}</strong></div>`
+        : `<div class="row" id="rowUser" hidden><span>${copy.deliver}</span><strong id="vUser"></strong></div>`,
+    ].join("");
 
     res.type("html").send(`<!doctype html>
 <html lang="${lang}" dir="${lang === "ar" ? "rtl" : "ltr"}"><head><meta charset="utf-8"/>
@@ -962,10 +1001,32 @@ h1{margin:0 0 .55rem;font-size:1.55rem}
   <p class="brand">𝐂𝐨𝐝𝐞𝐗</p>
   <h1>${copy.title}</h1>
   <p class="thanks">${copy.thanks}</p>
-  ${details ? `<div class="box">${details}</div>` : ""}
+  <div class="box" id="detailsBox" ${hasDetails ? "" : "hidden"}>${details}</div>
   <p class="next">${copy.next}</p>
   <p class="tip">${copy.tip}</p>
 </div>
+<script>
+(function(){
+  try {
+    var meta = JSON.parse(sessionStorage.getItem('codex_pay_meta') || '{}');
+    if (!meta || typeof meta !== 'object') return;
+    var box = document.getElementById('detailsBox');
+    function fill(rowId, valId, text, prefix){
+      if (!text) return;
+      var row = document.getElementById(rowId);
+      var val = document.getElementById(valId);
+      if (!row || !val) return;
+      val.textContent = (prefix || '') + text;
+      row.hidden = false;
+      if (box) box.hidden = false;
+    }
+    var q = new URLSearchParams(location.search);
+    if (!q.get('name') && meta.name) fill('rowOrder', 'vOrder', meta.name);
+    if (!q.get('amount') && meta.amount) fill('rowAmount', 'vAmount', Number(meta.amount).toFixed(2) + ' USD');
+    if (!q.get('user') && meta.user) fill('rowUser', 'vUser', meta.user, '@');
+  } catch (e) {}
+})();
+</script>
 </body></html>`);
   });
 
