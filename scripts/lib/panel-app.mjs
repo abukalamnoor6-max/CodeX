@@ -15,9 +15,37 @@ export function createPanelApp({
   apiKey,
   guildId,
   postDeliveryOrder,
+  stripePayments = null,
+  onStripePaid = null,
 }) {
   const app = express();
   app.use(cors());
+
+  // Stripe webhook needs raw body — must be before express.json()
+  app.post(
+    "/stripe/webhook",
+    express.raw({ type: "application/json" }),
+    async (req, res) => {
+      if (!stripePayments) {
+        return res.status(503).send("Stripe not configured");
+      }
+      const signature = req.headers["stripe-signature"];
+      try {
+        const event = stripePayments.constructEvent(req.body, signature);
+        if (event.type === "checkout.session.completed") {
+          const session = event.data.object;
+          if (typeof onStripePaid === "function") {
+            await onStripePaid(session, event);
+          }
+        }
+        res.json({ received: true });
+      } catch (e) {
+        console.error("stripe webhook error:", e.message);
+        res.status(400).send(`Webhook Error: ${e.message}`);
+      }
+    },
+  );
+
   app.use(express.json({ limit: "1mb" }));
 
   // Delivery webhook (existing)
@@ -32,7 +60,94 @@ export function createPanelApp({
   });
 
   app.get("/health", (req, res) => {
-    res.json({ ok: true, user: client.user?.tag || null });
+    res.json({
+      ok: true,
+      user: client.user?.tag || null,
+      stripe: Boolean(stripePayments),
+    });
+  });
+
+  // Create Checkout Session → returns { url }
+  app.post("/stripe/checkout", async (req, res) => {
+    try {
+      if (!stripePayments) {
+        return res.status(503).json({ error: "Stripe not configured" });
+      }
+      const {
+        name,
+        amount,
+        amountAed,
+        quantity,
+        discordId,
+        email,
+        customerEmail,
+      } = req.body || {};
+      const amountMajor = amount ?? amountAed;
+      const session = await stripePayments.createCheckoutSession({
+        name: name || "codeX — خدمة",
+        amountMajor,
+        quantity,
+        discordId,
+        customerEmail: customerEmail || email || "",
+      });
+      res.json({ ok: true, id: session.id, url: session.url });
+    } catch (e) {
+      res.status(400).json({ ok: false, error: e.message });
+    }
+  });
+
+  // Quick pay link: /pay?amount=50&name=بوت
+  app.get("/pay", async (req, res) => {
+    try {
+      if (!stripePayments) {
+        return res
+          .status(503)
+          .type("html")
+          .send("<h1>Stripe غير مضبوط</h1><p>أضف STRIPE_SECRET_KEY في Railway.</p>");
+      }
+      const amount = Number(req.query.amount || req.query.a);
+      const name = String(req.query.name || req.query.n || "codeX — خدمة");
+      const discordId = String(req.query.discord || req.query.d || "");
+      const session = await stripePayments.createCheckoutSession({
+        name,
+        amountMajor: amount,
+        discordId,
+      });
+      res.redirect(303, session.url);
+    } catch (e) {
+      res
+        .status(400)
+        .type("html")
+        .send(`<h1>خطأ</h1><p>${e.message}</p>`);
+    }
+  });
+
+  app.get("/pay/success", (req, res) => {
+    res.type("html").send(`<!doctype html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>تم الدفع — codeX</title>
+<style>
+body{font-family:system-ui,sans-serif;background:#0b1220;color:#e8eefc;display:grid;place-items:center;min-height:100vh;margin:0}
+.card{max-width:420px;padding:2rem;border:1px solid #1e2a44;border-radius:16px;background:#121a2b;text-align:center}
+h1{margin:0 0 .5rem;font-size:1.4rem}p{opacity:.85;line-height:1.6}
+</style></head><body><div class="card">
+<h1>تم الدفع بنجاح</h1>
+<p>شكراً لثقتك في codeX. راح يوصلك تأكيد على دسكورد قريب إن شاء الله.</p>
+</div></body></html>`);
+  });
+
+  app.get("/pay/cancel", (req, res) => {
+    res.type("html").send(`<!doctype html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>تم الإلغاء — codeX</title>
+<style>
+body{font-family:system-ui,sans-serif;background:#0b1220;color:#e8eefc;display:grid;place-items:center;min-height:100vh;margin:0}
+.card{max-width:420px;padding:2rem;border:1px solid #1e2a44;border-radius:16px;background:#121a2b;text-align:center}
+h1{margin:0 0 .5rem;font-size:1.4rem}p{opacity:.85;line-height:1.6}
+</style></head><body><div class="card">
+<h1>تم إلغاء الدفع</h1>
+<p>ما تم خصم أي مبلغ. تقدر ترجع وتجرب مرة ثانية متى ما تبي.</p>
+</div></body></html>`);
   });
 
   // Dashboard config — same origin API

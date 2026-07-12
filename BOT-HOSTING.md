@@ -42,6 +42,33 @@ CODEX_SETUP_LOGS=1
 
 أوامر مفيدة: `/bc-panel` · `/setup-logs` · `/logs-info`
 
+## Stripe (اختبار / دفع)
+
+1) في Stripe Dashboard (Test mode) → **Developers → API keys**
+2) **جدّد الـ Secret key** إذا انكشف بالشات/سكرين، ولا ترسله لأحد
+3) Railway → Variables:
+
+```
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_PUBLISHABLE_KEY=pk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+PUBLIC_BASE_URL=https://YOUR-SERVICE.up.railway.app
+STRIPE_CURRENCY=aed
+STRIPE_NOTIFY_CHANNEL_ID=1524961264869310494
+```
+
+4) Stripe → **Developers → Webhooks → Add endpoint**
+   - URL: `https://YOUR-SERVICE.up.railway.app/stripe/webhook`
+   - Event: `checkout.session.completed`
+   - انسخ Signing secret → `STRIPE_WEBHOOK_SECRET`
+
+5) بعد الـ Deploy جرّب:
+   `https://YOUR-SERVICE.up.railway.app/pay?amount=50&name=بوت`
+   بطاقة تجريبية: `4242 4242 4242 4242`
+
+بعد الدفع الناجح يرسل البوت إشعار في روم التسليم (أو `STRIPE_NOTIFY_CHANNEL_ID`).
+
 ## ملاحظة
 لا تشغّل البوت على Vercel — يحتاج عملية 24/7.
 لا تشغّل نفس التوكن محلياً وRailway معاً.
+لا تحط مفاتيح Stripe داخل الكود أو الشات — Railway Variables فقط.

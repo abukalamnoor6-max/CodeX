@@ -31,6 +31,7 @@ import {
   registerPanelCommands,
 } from "./lib/broadcast-ui.mjs";
 import { createPanelApp } from "./lib/panel-app.mjs";
+import { createStripePayments } from "./lib/stripe-payments.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -51,6 +52,14 @@ const REVIEWS_CHANNEL_ID =
   process.env.DISCORD_REVIEWS_CHANNEL_ID || "1524981051787837540";
 const DELIVERY_CHANNEL_ID =
   process.env.DISCORD_DELIVERY_CHANNEL_ID || "1524961264869310494";
+const PUBLIC_BASE_URL = (
+  process.env.PUBLIC_BASE_URL ||
+  (process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : "")
+).replace(/\/$/, "");
+const STRIPE_NOTIFY_CHANNEL_ID =
+  process.env.STRIPE_NOTIFY_CHANNEL_ID || DELIVERY_CHANNEL_ID;
 
 if (!TOKEN) {
   console.error("Missing DISCORD_BOT_TOKEN");
@@ -540,6 +549,56 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
+async function onStripePaid(session) {
+  const channelId = STRIPE_NOTIFY_CHANNEL_ID || meta.deliveryChannelId;
+  if (!channelId) {
+    console.warn("stripe paid but no notify channel");
+    return;
+  }
+  const amountTotal =
+    typeof session.amount_total === "number"
+      ? (session.amount_total / 100).toFixed(2)
+      : "?";
+  const currency = String(session.currency || "aed").toUpperCase();
+  const productName = session.metadata?.productName || "خدمة codeX";
+  const discordId = session.metadata?.discordId || "";
+  const email = session.customer_details?.email || session.customer_email || "—";
+  const sessionId = session.id || "—";
+
+  const channel = await client.channels.fetch(channelId);
+  const embed = new EmbedBuilder()
+    .setColor(0x635bff)
+    .setTitle("Stripe — دفعة جديدة")
+    .setDescription(
+      [
+        `**المنتج:** ${productName}`,
+        `**المبلغ:** ${amountTotal} ${currency}`,
+        `**الإيميل:** ${email}`,
+        discordId ? `**دسكورد:** <@${discordId}>` : null,
+        `**Session:** \`${sessionId}\``,
+        "",
+        "الحالة: مدفوعة (Test/Live حسب المفاتيح)",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    )
+    .setFooter({ text: "codeX · Stripe" })
+    .setTimestamp();
+
+  await channel.send({
+    content: `<@${OWNER_ID}>`,
+    embeds: [embed],
+    allowedMentions: { users: [OWNER_ID] },
+  });
+}
+
+const stripePayments = createStripePayments({
+  secretKey: process.env.STRIPE_SECRET_KEY || "",
+  webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
+  publicBaseUrl: PUBLIC_BASE_URL,
+  currency: process.env.STRIPE_CURRENCY || "aed",
+});
+
 const panelApp = createPanelApp({
   client,
   store: panelStore,
@@ -547,10 +606,20 @@ const panelApp = createPanelApp({
   apiKey: API_KEY,
   guildId: GUILD_ID,
   postDeliveryOrder,
+  stripePayments,
+  onStripePaid,
 });
 
 panelApp.listen(PORT, "0.0.0.0", () => {
   console.log("http panel on", PORT);
   console.log("dashboard: /  |  health: /health  |  api: /api/*");
+  console.log(
+    "stripe:",
+    stripePayments ? "enabled" : "disabled (set STRIPE_SECRET_KEY)",
+  );
+  if (stripePayments && PUBLIC_BASE_URL) {
+    console.log("pay example:", `${PUBLIC_BASE_URL}/pay?amount=50&name=codeX`);
+    console.log("webhook:", `${PUBLIC_BASE_URL}/stripe/webhook`);
+  }
 });
 client.login(TOKEN);
