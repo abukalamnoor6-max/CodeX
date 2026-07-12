@@ -157,7 +157,7 @@ export function createPanelApp({
     process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ||
     "";
 
-  function payFormPage({ amount, name, error = "" }) {
+  function payFormPage({ amount, name, error = "", discord = "", discordId = "" }) {
     const amountLabel = Number(amount).toFixed(2);
     const safeName = escapeHtml(name);
     const errBlock = error
@@ -177,12 +177,14 @@ h1{margin:0 0 .75rem;font-size:1.35rem}
 .meta{margin:0 0 1.1rem;color:var(--muted);line-height:1.7;font-size:.95rem}
 .meta strong{color:var(--text)}
 label{display:block;margin:0 0 .4rem;font-size:.92rem}
+.field{margin:0 0 1rem}
 input{width:100%;padding:.85rem 1rem;border-radius:12px;border:1px solid var(--line);background:#0d1524;color:var(--text);font-size:1rem;outline:none}
 input:focus{border-color:var(--accent)}
-.hint{margin:.45rem 0 1.1rem;color:var(--muted);font-size:.82rem;line-height:1.5}
-button{width:100%;border:0;border-radius:12px;padding:.95rem 1rem;background:linear-gradient(135deg,#14b8a6,#0d9488);color:#041016;font-weight:700;font-size:1rem;cursor:pointer}
+.hint{margin:.4rem 0 0;color:var(--muted);font-size:.8rem;line-height:1.5}
+button{width:100%;border:0;border-radius:12px;padding:.95rem 1rem;background:linear-gradient(135deg,#14b8a6,#0d9488);color:#041016;font-weight:700;font-size:1rem;cursor:pointer;margin-top:.35rem}
 button:hover{filter:brightness(1.05)}
 .err{color:var(--err);background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.25);padding:.7rem .85rem;border-radius:10px;margin:0 0 1rem;font-size:.9rem}
+.badge{display:inline-block;font-size:.72rem;padding:.15rem .45rem;border-radius:999px;background:rgba(45,212,191,.12);color:var(--accent);margin-inline-start:.35rem;vertical-align:middle}
 </style></head><body><div class="card">
 <p class="brand">codeX</p>
 <h1>قبل الدفع</h1>
@@ -191,18 +193,26 @@ ${errBlock}
 <form method="POST" action="/pay">
 <input type="hidden" name="amount" value="${escapeHtml(amountLabel)}"/>
 <input type="hidden" name="name" value="${safeName}"/>
-<label for="discord">يوزر الدسكورد</label>
-<input id="discord" name="discord" type="text" required maxlength="40" autocomplete="username" placeholder="مثال: username أو username#0000" autofocus/>
-<p class="hint">مطلوب عشان نعرف لمن نسلّم الطلب بعد الدفع. اكتب يوزرك الحالي في دسكورد.</p>
+<div class="field">
+<label for="discord">اليوزر <span class="badge">اسم الحساب</span></label>
+<input id="discord" name="discord" type="text" required maxlength="40" autocomplete="username" placeholder="مثال: username" value="${escapeHtml(discord)}" autofocus/>
+<p class="hint">يوزر دسكورد الحالي (مو الديسپلاي نيم القديمًا).</p>
+</div>
+<div class="field">
+<label for="discordId">كوبي يوزر <span class="badge">آيدي الحساب</span></label>
+<input id="discordId" name="discordId" type="text" required maxlength="22" inputmode="numeric" pattern="\\d{15,22}" placeholder="مثال: 123456789012345678" value="${escapeHtml(discordId)}"/>
+<p class="hint">من دسكورد: الإعدادات ← متقدم ← وضع المطوّر ← يمين على حسابك ← نسخ معرّف المستخدم.</p>
+</div>
 <button type="submit">متابعة لخيارات الدفع</button>
 </form>
 </div></body></html>`;
   }
 
-  function payCheckoutPage({ amount, name, discordUser }) {
+  function payCheckoutPage({ amount, name, discordUser, discordId = "" }) {
     const amountLabel = Number(amount).toFixed(2);
     const safeName = escapeHtml(name);
     const safeUser = escapeHtml(String(discordUser || "").replace(/^@+/, ""));
+    const safeId = escapeHtml(String(discordId || ""));
     const clientId = escapeHtml(paypalClientId);
     if (!paypalClientId) {
       return `<h1>PayPal Client ID ناقص</h1>`;
@@ -221,10 +231,8 @@ body{margin:0;min-height:100vh;background:#f5f5f5;color:#111;font-family:"Segoe 
 h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
 .row{display:flex;justify-content:space-between;margin-bottom:1rem;font-size:1rem}
 .row strong{font-size:1.05rem}
-.sub{margin:0 0 .85rem;color:#555;font-size:.9rem}
-.sep{display:flex;align-items:center;gap:.6rem;margin:1rem 0 .85rem;color:#777;font-size:.85rem}
-.sep:before,.sep:after{content:"";flex:1;height:1px;background:#e5e5e5}
-#paypal-buttons{min-height:140px}
+.sub{margin:0 0 .55rem;color:#555;font-size:.9rem}
+#paypal-buttons{min-height:140px;margin-top:.6rem}
 .msg{margin-top:.9rem;color:#b91c1c;font-size:.88rem;display:none}
 .foot{margin-top:1rem;text-align:center;color:#888;font-size:.78rem}
 </style>
@@ -235,7 +243,8 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
   <div class="card">
     <h1>موجز الطلب</h1>
     <div class="row"><span>الإجمالي</span><strong>${amountLabel} USD</strong></div>
-    <p class="sub">دسكورد: @${safeUser}</p>
+    <p class="sub">اليوزر: @${safeUser}</p>
+    <p class="sub">كوبي يوزر: ${safeId || "—"}</p>
     <p class="sub">خيارات الدفع الإلكتروني السريع</p>
     <div id="paypal-buttons"></div>
     <p class="msg" id="err"></p>
@@ -247,6 +256,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
   var amount = ${JSON.stringify(amountLabel)};
   var name = ${JSON.stringify(String(name))};
   var discordUser = ${JSON.stringify(String(discordUser || "").replace(/^@+/, ""))};
+  var discordId = ${JSON.stringify(String(discordId || ""))};
   var err = document.getElementById('err');
   function showErr(t){ err.style.display='block'; err.textContent=t||'فشل الدفع'; }
 
@@ -254,7 +264,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     return fetch('/paypal/order', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ amount: Number(amount), name: name, discordUser: discordUser, discordId: /^\\d{15,22}$/.test(discordUser)?discordUser:'' })
+      body: JSON.stringify({ amount: Number(amount), name: name, discordUser: discordUser, discordId: discordId })
     }).then(function(r){ return r.json().then(function(j){ if(!r.ok||!j.id) throw new Error(j.error||'تعذر إنشاء الطلب'); return j.id; }); });
   }
   function onApprove(data){
@@ -305,14 +315,29 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
           .send("<h1>خطأ</h1><p>المبلغ غير صالح. استخدم مثلاً /pay?amount=10&name=خدمة</p>");
       }
       const discord = String(
-        req.query.discord || req.query.user || req.query.u || req.query.d || "",
+        req.query.discord || req.query.user || req.query.u || "",
+      )
+        .trim()
+        .replace(/^@+/, "");
+      const discordId = String(
+        req.query.discordId || req.query.id || req.query.d || "",
       ).trim();
-      if (!discord) {
-        return res.type("html").send(payFormPage({ amount, name }));
+      // Always show the form unless both identity fields are present
+      if (!discord || !/^\d{15,22}$/.test(discordId)) {
+        return res
+          .type("html")
+          .send(payFormPage({ amount, name, discord, discordId }));
       }
       return res
         .type("html")
-        .send(payCheckoutPage({ amount, name, discordUser: discord }));
+        .send(
+          payCheckoutPage({
+            amount,
+            name,
+            discordUser: discord,
+            discordId,
+          }),
+        );
     } catch (e) {
       res
         .status(400)
@@ -331,6 +356,9 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       const discord = String(req.body?.discord || "")
         .trim()
         .replace(/^@+/, "");
+      const discordId = String(req.body?.discordId || "")
+        .trim()
+        .replace(/\s+/g, "");
       if (!Number.isFinite(amount) || amount <= 0) {
         return res
           .status(400)
@@ -341,19 +369,60 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
         return res
           .status(400)
           .type("html")
-          .send(payFormPage({ amount, name, error: "اكتب يوزر الدسكورد قبل الدفع" }));
+          .send(
+            payFormPage({
+              amount,
+              name,
+              discord,
+              discordId,
+              error: "اكتب اليوزر قبل الدفع",
+            }),
+          );
+      }
+      if (!/^\d{15,22}$/.test(discordId)) {
+        return res
+          .status(400)
+          .type("html")
+          .send(
+            payFormPage({
+              amount,
+              name,
+              discord,
+              discordId,
+              error: "الصق كوبي يوزر (آيدي الحساب) — أرقام فقط من دسكورد",
+            }),
+          );
       }
       return res
         .type("html")
-        .send(payCheckoutPage({ amount, name, discordUser: discord }));
+        .send(
+          payCheckoutPage({
+            amount,
+            name,
+            discordUser: discord,
+            discordId,
+          }),
+        );
     } catch (e) {
       const amount = Number(req.body?.amount);
       const name = String(req.body?.name || "codeX — خدمة");
+      const discord = String(req.body?.discord || "")
+        .trim()
+        .replace(/^@+/, "");
+      const discordId = String(req.body?.discordId || "").trim();
       if (Number.isFinite(amount) && amount > 0) {
         return res
           .status(400)
           .type("html")
-          .send(payFormPage({ amount, name, error: e.message }));
+          .send(
+            payFormPage({
+              amount,
+              name,
+              discord,
+              discordId,
+              error: e.message,
+            }),
+          );
       }
       res
         .status(400)

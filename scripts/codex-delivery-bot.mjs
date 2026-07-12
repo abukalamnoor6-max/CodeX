@@ -654,11 +654,18 @@ async function sendPaidInvoice({
   const staffRoleTeam =
     process.env.DISCORD_STAFF_ROLE_TEAM || "1524961198360236084";
   const paidAt = new Date().toLocaleString("ar-SA");
-  const discordLine = discordId
-    ? `**دسكورد:** <@${discordId}>`
-    : discordUser
-      ? `**دسكورد:** \`@${String(discordUser).replace(/^@+/, "")}\``
-      : "**دسكورد:** —";
+  const userLabel = discordUser
+    ? `\`@${String(discordUser).replace(/^@+/, "")}\``
+    : "";
+  const idLabel = discordId ? `<@${discordId}>` : "";
+  const discordLine =
+    idLabel && userLabel
+      ? `**دسكورد:** ${idLabel} · اليوزر: ${userLabel}`
+      : idLabel
+        ? `**دسكورد:** ${idLabel}`
+        : userLabel
+          ? `**دسكورد:** ${userLabel}`
+          : "**دسكورد:** —";
 
   const channel = await client.channels.fetch(channelId);
   const embed = new EmbedBuilder()
