@@ -15,58 +15,73 @@ export function createPanelApp({
   apiKey,
   guildId,
   postDeliveryOrder,
-  stripePayments = null,
-  onStripePaid = null,
-  moyasarPayments = null,
-  onMoyasarPaid = null,
+  paypalPayments = null,
+  onPayPalPaid = null,
 }) {
   const app = express();
   app.use(cors());
 
-  // Stripe webhook needs raw body — must be before express.json()
+  // PayPal webhook needs raw body — must be before express.json()
   app.post(
-    "/stripe/webhook",
+    "/paypal/webhook",
     express.raw({ type: "application/json" }),
     async (req, res) => {
-      if (!stripePayments) {
-        return res.status(503).send("Stripe not configured");
+      if (!paypalPayments) {
+        return res.status(503).send("PayPal not configured");
       }
-      const signature = req.headers["stripe-signature"];
       try {
-        const event = stripePayments.constructEvent(req.body, signature);
-        if (event.type === "checkout.session.completed") {
-          const session = event.data.object;
-          if (typeof onStripePaid === "function") {
-            await onStripePaid(session, event);
+        const raw =
+          Buffer.isBuffer(req.body)
+            ? req.body.toString("utf8")
+            : String(req.body || "");
+        const event = raw ? JSON.parse(raw) : {};
+
+        let verified = true;
+        if (process.env.PAYPAL_WEBHOOK_ID) {
+          verified = await paypalPayments.verifyWebhook({
+            headers: req.headers,
+            body: event,
+          });
+        } else {
+          console.warn(
+            "PAYPAL_WEBHOOK_ID missing — webhook accepted without signature verify",
+          );
+        }
+        if (!verified) {
+          console.warn("paypal webhook verification failed");
+          return res.status(400).send("invalid signature");
+        }
+
+        const type = String(event.event_type || "");
+
+        // Buyer approved an API order → capture so money settles
+        if (type === "CHECKOUT.ORDER.APPROVED") {
+          const orderId = event.resource?.id;
+          if (orderId) {
+            await paypalPayments.captureOrder(orderId).catch((e) =>
+              console.error("paypal capture error:", e.message),
+            );
           }
         }
+
+        // Payment completed (NCP links + Orders API captures)
+        if (
+          (type === "PAYMENT.CAPTURE.COMPLETED" ||
+            type === "PAYMENT.SALE.COMPLETED") &&
+          typeof onPayPalPaid === "function"
+        ) {
+          await onPayPalPaid(event.resource || {}, event);
+        }
+
         res.json({ received: true });
       } catch (e) {
-        console.error("stripe webhook error:", e.message);
+        console.error("paypal webhook error:", e.message);
         res.status(400).send(`Webhook Error: ${e.message}`);
       }
     },
   );
 
   app.use(express.json({ limit: "1mb" }));
-
-  // Moyasar invoice paid callback (JSON body)
-  app.post("/moyasar/callback", async (req, res) => {
-    try {
-      if (!moyasarPayments) {
-        return res.status(503).json({ error: "Moyasar not configured" });
-      }
-      const invoice = req.body || {};
-      const status = String(invoice.status || "").toLowerCase();
-      if (status === "paid" && typeof onMoyasarPaid === "function") {
-        await onMoyasarPaid(invoice);
-      }
-      res.json({ ok: true });
-    } catch (e) {
-      console.error("moyasar callback error:", e.message);
-      res.status(500).json({ ok: false, error: e.message });
-    }
-  });
 
   // Delivery webhook (existing)
   app.post("/delivery-order", async (req, res) => {
@@ -83,109 +98,53 @@ export function createPanelApp({
     res.json({
       ok: true,
       user: client.user?.tag || null,
-      stripe: Boolean(stripePayments),
-      moyasar: Boolean(moyasarPayments),
+      paypal: Boolean(paypalPayments),
     });
   });
 
-  // Create Checkout Session → returns { url }
-  app.post("/stripe/checkout", async (req, res) => {
+  // Create PayPal order → returns { url }
+  app.post("/paypal/order", async (req, res) => {
     try {
-      if (!stripePayments) {
-        return res.status(503).json({ error: "Stripe not configured" });
+      if (!paypalPayments) {
+        return res.status(503).json({ error: "PayPal not configured" });
       }
-      const {
-        name,
-        amount,
-        amountAed,
-        quantity,
-        discordId,
-        email,
-        customerEmail,
-      } = req.body || {};
-      const amountMajor = amount ?? amountAed;
-      const session = await stripePayments.createCheckoutSession({
+      const { name, amount, discordId } = req.body || {};
+      const order = await paypalPayments.createOrder({
         name: name || "codeX — خدمة",
-        amountMajor,
-        quantity,
+        amountMajor: amount,
         discordId,
-        customerEmail: customerEmail || email || "",
       });
-      res.json({ ok: true, id: session.id, url: session.url });
+      res.json({ ok: true, id: order.id, url: order.url, status: order.status });
     } catch (e) {
       res.status(400).json({ ok: false, error: e.message });
     }
   });
 
-  // Quick pay link: /pay?amount=50&name=بوت
+  // Quick pay link: /pay?amount=10&name=بوت
   app.get("/pay", async (req, res) => {
     try {
-      if (!stripePayments) {
-        return res
-          .status(503)
-          .type("html")
-          .send("<h1>Stripe غير مضبوط</h1><p>أضف STRIPE_SECRET_KEY في Railway.</p>");
-      }
-      const amount = Number(req.query.amount || req.query.a);
-      const name = String(req.query.name || req.query.n || "codeX — خدمة");
-      const discordId = String(req.query.discord || req.query.d || "");
-      const session = await stripePayments.createCheckoutSession({
-        name,
-        amountMajor: amount,
-        discordId,
-      });
-      res.redirect(303, session.url);
-    } catch (e) {
-      res
-        .status(400)
-        .type("html")
-        .send(`<h1>خطأ</h1><p>${e.message}</p>`);
-    }
-  });
-
-  // Moyasar invoice link: /pay/moyasar?amount=50&name=بوت
-  app.get("/pay/moyasar", async (req, res) => {
-    try {
-      if (!moyasarPayments) {
+      if (!paypalPayments) {
         return res
           .status(503)
           .type("html")
           .send(
-            "<h1>Moyasar غير مضبوط</h1><p>أضف MOYASAR_SECRET_KEY في Railway.</p>",
+            "<h1>PayPal غير مضبوط</h1><p>أضف PAYPAL_CLIENT_ID و PAYPAL_CLIENT_SECRET في Railway.</p>",
           );
       }
       const amount = Number(req.query.amount || req.query.a);
       const name = String(req.query.name || req.query.n || "codeX — خدمة");
       const discordId = String(req.query.discord || req.query.d || "");
-      const invoice = await moyasarPayments.createInvoice({
+      const order = await paypalPayments.createOrder({
         name,
         amountMajor: amount,
         discordId,
       });
-      if (!invoice?.url) throw new Error("Moyasar did not return invoice url");
-      res.redirect(303, invoice.url);
+      res.redirect(303, order.url);
     } catch (e) {
       res
         .status(400)
         .type("html")
         .send(`<h1>خطأ</h1><p>${e.message}</p>`);
-    }
-  });
-
-  app.post("/moyasar/invoice", async (req, res) => {
-    try {
-      if (!moyasarPayments) {
-        return res.status(503).json({ error: "Moyasar not configured" });
-      }
-      const { name, amount, discordId } = req.body || {};
-      const invoice = await moyasarPayments.createInvoice({
-        name: name || "codeX — خدمة",
-        amountMajor: amount,
-        discordId,
-      });
-      res.json({ ok: true, id: invoice.id, url: invoice.url, status: invoice.status });
-    } catch (e) {
-      res.status(400).json({ ok: false, error: e.message });
     }
   });
 

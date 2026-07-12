@@ -42,33 +42,38 @@ CODEX_SETUP_LOGS=1
 
 أوامر مفيدة: `/bc-panel` · `/setup-logs` · `/logs-info`
 
-## Stripe (اختبار / دفع)
+## PayPal (دفع + إشعار دسكورد)
 
-1) في Stripe Dashboard (Test mode) → **Developers → API keys**
-2) **جدّد الـ Secret key** إذا انكشف بالشات/سكرين، ولا ترسله لأحد
-3) Railway → Variables:
+1) ادخل https://developer.paypal.com → **Apps & Credentials** → Live (حسابك Business)
+2) أنشئ App أو افتح الموجود → انسخ **Client ID** و **Secret**
+3) في نفس الـ App → **Webhooks** → Add Webhook:
+   - URL: `https://YOUR-SERVICE.up.railway.app/paypal/webhook`
+   - Events:
+     - `PAYMENT.CAPTURE.COMPLETED`
+     - `CHECKOUT.ORDER.APPROVED`
+   - انسخ **Webhook ID**
+4) Railway → Variables:
 
 ```
-STRIPE_SECRET_KEY=sk_test_...
-STRIPE_PUBLISHABLE_KEY=pk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
+PAYPAL_CLIENT_ID=...
+PAYPAL_CLIENT_SECRET=...
+PAYPAL_WEBHOOK_ID=...
+PAYPAL_MODE=live
+PAYPAL_CURRENCY=USD
 PUBLIC_BASE_URL=https://YOUR-SERVICE.up.railway.app
-STRIPE_CURRENCY=aed
-STRIPE_NOTIFY_CHANNEL_ID=1524961264869310494
+PAYPAL_NOTIFY_CHANNEL_ID=1524971495921684601
 ```
 
-4) Stripe → **Developers → Webhooks → Add endpoint**
-   - URL: `https://YOUR-SERVICE.up.railway.app/stripe/webhook`
-   - Event: `checkout.session.completed`
-   - انسخ Signing secret → `STRIPE_WEBHOOK_SECRET`
+5) احذف من Railway أي متغيرات Stripe / Moyasar إن وجدت:
+   `STRIPE_*` · `MOYASAR_*`
 
-5) بعد الـ Deploy جرّب:
-   `https://YOUR-SERVICE.up.railway.app/pay?amount=50&name=بوت`
-   بطاقة تجريبية: `4242 4242 4242 4242`
+6) بعد الـ Deploy جرّب رابط سريع:
+   `https://YOUR-SERVICE.up.railway.app/pay?amount=1&name=اختبار`
+   أو ادفع من روابط PayPal NCP الموجودة — نفس الإشعار يجي للدسكورد.
 
-بعد الدفع الناجح يرسل البوت إشعار في روم التسليم (أو `STRIPE_NOTIFY_CHANNEL_ID`).
+بعد الدفع الناجح يرسل البوت فاتورة في قناة `PAYPAL_NOTIFY_CHANNEL_ID`.
 
 ## ملاحظة
 لا تشغّل البوت على Vercel — يحتاج عملية 24/7.
 لا تشغّل نفس التوكن محلياً وRailway معاً.
-لا تحط مفاتيح Stripe داخل الكود أو الشات — Railway Variables فقط.
+لا تحط مفاتيح PayPal داخل الكود أو الشات — Railway Variables فقط.

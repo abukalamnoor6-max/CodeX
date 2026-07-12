@@ -31,8 +31,7 @@ import {
   registerPanelCommands,
 } from "./lib/broadcast-ui.mjs";
 import { createPanelApp } from "./lib/panel-app.mjs";
-import { createStripePayments } from "./lib/stripe-payments.mjs";
-import { createMoyasarPayments } from "./lib/moyasar-payments.mjs";
+import { createPayPalPayments } from "./lib/paypal-payments.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -59,8 +58,10 @@ const PUBLIC_BASE_URL = (
     ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
     : "")
 ).replace(/\/$/, "");
-const STRIPE_NOTIFY_CHANNEL_ID =
-  process.env.STRIPE_NOTIFY_CHANNEL_ID || "1524971495921684601";
+const PAYPAL_NOTIFY_CHANNEL_ID =
+  process.env.PAYPAL_NOTIFY_CHANNEL_ID ||
+  process.env.STRIPE_NOTIFY_CHANNEL_ID ||
+  "1524971495921684601";
 
 if (!TOKEN) {
   console.error("Missing DISCORD_BOT_TOKEN");
@@ -558,11 +559,11 @@ async function sendPaidInvoice({
   email = "—",
   customerName = "عميل",
   discordId = "",
-  paymentMethod = "Stripe",
+  paymentMethod = "PayPal",
   modeLabel = "",
   refId = "",
 }) {
-  const channelId = STRIPE_NOTIFY_CHANNEL_ID || meta.deliveryChannelId;
+  const channelId = PAYPAL_NOTIFY_CHANNEL_ID || meta.deliveryChannelId;
   if (!channelId) {
     console.warn("paid invoice but no notify channel");
     return;
@@ -625,90 +626,59 @@ async function sendPaidInvoice({
   return { messageId: msg.id, channelId, invoiceNo };
 }
 
-async function onStripePaid(session) {
-  const amountTotal =
-    typeof session.amount_total === "number"
-      ? (session.amount_total / 100).toFixed(2)
-      : "?";
-  const currencyRaw = String(session.currency || "aed").toLowerCase();
+const paypalPayments = createPayPalPayments({
+  clientId: process.env.PAYPAL_CLIENT_ID || "",
+  clientSecret: process.env.PAYPAL_CLIENT_SECRET || "",
+  webhookId: process.env.PAYPAL_WEBHOOK_ID || "",
+  publicBaseUrl: PUBLIC_BASE_URL,
+  currency: process.env.PAYPAL_CURRENCY || "USD",
+  mode: process.env.PAYPAL_MODE || "live",
+});
+
+async function onPayPalPaid(resource) {
+  const parsed = paypalPayments
+    ? paypalPayments.parseCaptureResource(resource)
+    : {
+        captureId: resource?.id || "",
+        amountValue: resource?.amount?.value || "?",
+        currencyCode: resource?.amount?.currency_code || "USD",
+        productName: resource?.custom_id || "خدمة codeX",
+        discordId: "",
+        payerName: "",
+        payerEmail: "",
+      };
+
+  const currencyRaw = String(parsed.currencyCode || "USD").toLowerCase();
   const currencyLabel =
-    currencyRaw === "aed"
-      ? "د.إ"
+    currencyRaw === "usd"
+      ? "USD"
       : currencyRaw === "sar"
         ? "ر.س"
         : currencyRaw.toUpperCase();
-  const productName = session.metadata?.productName || "خدمة codeX";
-  const discordId = session.metadata?.discordId || "";
-  const email =
-    session.customer_details?.email || session.customer_email || "—";
-  const customerName =
-    session.customer_details?.name ||
-    session.metadata?.customerName ||
-    "عميل Stripe";
-  const sessionId = session.id || "—";
-  const shortId = String(sessionId)
-    .replace(/^cs_test_/, "")
-    .replace(/^cs_live_/, "")
+
+  const shortId = String(parsed.captureId || parsed.orderId || "XXXX")
+    .replace(/[^a-zA-Z0-9]/g, "")
     .slice(-8)
     .toUpperCase();
-  const invoiceNo = `CX-STRIPE-${shortId || "XXXX"}`;
-  const modeLabel = String(sessionId).includes("test") ? "تجريبي" : "Live";
+  const invoiceNo = `CX-PP-${shortId || "XXXX"}`;
+  const modeLabel =
+    String(process.env.PAYPAL_MODE || "live").toLowerCase() === "sandbox"
+      ? "تجريبي"
+      : "Live";
 
   return sendPaidInvoice({
     invoiceNo,
-    productName,
-    amountLabel: amountTotal,
+    productName: parsed.productName || "خدمة codeX",
+    amountLabel: String(parsed.amountValue || "?"),
     currencyLabel,
-    email,
-    customerName,
-    discordId,
-    paymentMethod: "Stripe",
+    email: parsed.payerEmail || "—",
+    customerName: parsed.payerName || "عميل PayPal",
+    discordId: parsed.discordId || "",
+    paymentMethod: "PayPal",
     modeLabel,
-    refId: sessionId,
+    refId: parsed.captureId || parsed.orderId || "",
   });
 }
-
-async function onMoyasarPaid(invoice) {
-  const amountLabel =
-    typeof invoice.amount === "number"
-      ? (invoice.amount / 100).toFixed(2)
-      : invoice.amount_format || "?";
-  const currencyRaw = String(invoice.currency || "SAR").toLowerCase();
-  const currencyLabel = currencyRaw === "sar" ? "ر.س" : currencyRaw.toUpperCase();
-  const invoiceMeta = invoice.metadata || {};
-  const productName =
-    invoiceMeta.productName || invoice.description || "خدمة codeX";
-  const discordId = invoiceMeta.discordId || "";
-  const id = invoice.id || "—";
-  const shortId = String(id).replace(/-/g, "").slice(-8).toUpperCase();
-  const invoiceNo = `CX-MOY-${shortId || "XXXX"}`;
-
-  return sendPaidInvoice({
-    invoiceNo,
-    productName,
-    amountLabel: String(amountLabel).replace(/[^\d.]/g, "") || amountLabel,
-    currencyLabel,
-    email: "—",
-    customerName: "عميل Moyasar",
-    discordId,
-    paymentMethod: "Moyasar",
-    modeLabel: "",
-    refId: id,
-  });
-}
-
-const stripePayments = createStripePayments({
-  secretKey: process.env.STRIPE_SECRET_KEY || "",
-  webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
-  publicBaseUrl: PUBLIC_BASE_URL,
-  currency: process.env.STRIPE_CURRENCY || "aed",
-});
-
-const moyasarPayments = createMoyasarPayments({
-  secretKey: process.env.MOYASAR_SECRET_KEY || "",
-  publicBaseUrl: PUBLIC_BASE_URL,
-  currency: process.env.MOYASAR_CURRENCY || "SAR",
-});
 
 const panelApp = createPanelApp({
   client,
@@ -717,33 +687,20 @@ const panelApp = createPanelApp({
   apiKey: API_KEY,
   guildId: GUILD_ID,
   postDeliveryOrder,
-  stripePayments,
-  onStripePaid,
-  moyasarPayments,
-  onMoyasarPaid,
+  paypalPayments,
+  onPayPalPaid,
 });
 
 panelApp.listen(PORT, "0.0.0.0", () => {
   console.log("http panel on", PORT);
   console.log("dashboard: /  |  health: /health  |  api: /api/*");
   console.log(
-    "stripe:",
-    stripePayments ? "enabled" : "disabled (set STRIPE_SECRET_KEY)",
+    "paypal:",
+    paypalPayments ? "enabled" : "disabled (set PAYPAL_CLIENT_ID + SECRET)",
   );
-  console.log(
-    "moyasar:",
-    moyasarPayments ? "enabled" : "disabled (set MOYASAR_SECRET_KEY)",
-  );
-  if (PUBLIC_BASE_URL) {
-    if (stripePayments) {
-      console.log("pay stripe:", `${PUBLIC_BASE_URL}/pay?amount=50&name=codeX`);
-    }
-    if (moyasarPayments) {
-      console.log(
-        "pay moyasar:",
-        `${PUBLIC_BASE_URL}/pay/moyasar?amount=50&name=codeX`,
-      );
-    }
+  if (PUBLIC_BASE_URL && paypalPayments) {
+    console.log("pay paypal:", `${PUBLIC_BASE_URL}/pay?amount=10&name=codeX`);
+    console.log("paypal webhook:", `${PUBLIC_BASE_URL}/paypal/webhook`);
   }
 });
 client.login(TOKEN);
