@@ -41,6 +41,22 @@ export const STAFF_ROLE_IDS = [
   process.env.DISCORD_STAFF_ROLE_TEAM || "1524961198360236084", // 〢 TEAM CodeX
 ];
 
+/** Optional hard IDs: DISCORD_CUSTOMER_ROLE_IDS=id1,id2,... */
+export const CUSTOMER_ROLE_IDS = String(
+  process.env.DISCORD_CUSTOMER_ROLE_IDS || "",
+)
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+/** رتب العملاء اللي تقدر تفتح تذكرة استلام طلب */
+const CUSTOMER_RANK_MATCHERS = [
+  /Partner|𝐏𝐚𝐫𝐭𝐧𝐞𝐫|شريك/i,
+  /VIP\s*CodeX|𝐕𝐈𝐏.*CodeX|〢\s*.*VIP/i,
+  /Premium\s*Client|𝐏𝐫𝐞𝐦𝐢𝐮𝐦|Premium/i,
+  /𝐂𝐥𝐢𝐞𝐧𝐭|〢\s*.*Client\b|^⭐?\s*Client\b|Customer|زبون/i,
+];
+
 export const TICKET_TYPES = {
   inquiry: {
     value: "inquiry",
@@ -58,9 +74,10 @@ export const TICKET_TYPES = {
     categoryLabel: "استلام طلب",
     emoji: "💵",
     channelEmoji: "💵",
-    description: "جاهز تستلم طلبك أو تتابع التسليم",
+    description: "للعملاء فقط — جاهز تستلم أو تتابع التسليم",
     color: 0x57f287,
     prefix: "استلام",
+    requiresCustomerRank: true,
   },
   problem: {
     value: "problem",
@@ -106,6 +123,20 @@ function isStaffMember(member) {
   if (!member) return false;
   if (member.id === OWNER_ID) return true;
   return STAFF_ROLE_IDS.some((id) => member.roles.cache.has(id));
+}
+
+function isCustomerRoleName(name = "") {
+  const n = String(name);
+  if (/OWNER|TEAM\s*CodeX|Visitor|BOOSTER|Founder/i.test(n)) return false;
+  return CUSTOMER_RANK_MATCHERS.some((re) => re.test(n));
+}
+
+/** Partner / VIP CodeX / Premium Client / Client (+ staff) */
+export function hasCustomerRank(member) {
+  if (!member) return false;
+  if (isStaffMember(member)) return true;
+  if (CUSTOMER_ROLE_IDS.some((id) => member.roles.cache.has(id))) return true;
+  return member.roles.cache.some((r) => isCustomerRoleName(r.name));
 }
 
 async function sendTicketLog(client, embed) {
@@ -184,7 +215,7 @@ export function buildTicketPanelPayload() {
         "",
         "اختر سبب فتح التذكرة من القائمة تحت:",
         "• **استفسار**",
-        "• **استلام طلب**",
+        "• **استلام طلب** — لرتب العملاء فقط",
         "• **مشكلة**",
       ].join("\n"),
     )
@@ -280,6 +311,30 @@ export async function openTicket(interaction, typeKey) {
   if (!type) {
     await interaction.reply({ content: "خيار غير معروف.", flags: MessageFlags.Ephemeral });
     return;
+  }
+
+  if (type.requiresCustomerRank) {
+    let member = interaction.member;
+    try {
+      if (member?.partial || !member?.roles?.cache) {
+        member = await interaction.guild.members.fetch(interaction.user.id);
+      }
+    } catch {}
+    if (!hasCustomerRank(member)) {
+      await interaction.reply({
+        content: [
+          "⛔ تذكرة **استلام طلب** مخصّصة لرتب العملاء فقط:",
+          "• Partner",
+          "• VIP CodeX",
+          "• Premium Client",
+          "• Client",
+          "",
+          "إذا اشتريت وما عندك الرتبة: اربط Discord من المتجر أو افتح تذكرة **مشكلة**.",
+        ].join("\n"),
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
   }
 
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
