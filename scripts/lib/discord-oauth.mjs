@@ -31,7 +31,8 @@ export function discordClientIdFromBotToken(token = "") {
 export function getDiscordOAuthConfig() {
   const clientId =
     process.env.DISCORD_CLIENT_ID ||
-    discordClientIdFromBotToken(process.env.DISCORD_BOT_TOKEN || "");
+    discordClientIdFromBotToken(process.env.DISCORD_BOT_TOKEN || "") ||
+    "1524960607948898461";
   const clientSecret = process.env.DISCORD_CLIENT_SECRET || "";
   let publicBase = String(
     process.env.PUBLIC_BASE_URL ||
@@ -44,9 +45,13 @@ export function getDiscordOAuthConfig() {
   if (publicBase && !/^https?:\/\//i.test(publicBase)) {
     publicBase = `https://${publicBase}`;
   }
+  // Production default for codeX bot host
+  if (!publicBase) {
+    publicBase = "https://codex-delivery-bot-production.up.railway.app";
+  }
   const redirectUri =
     process.env.DISCORD_OAUTH_REDIRECT_URI ||
-    (publicBase ? `${publicBase}/auth/discord/callback` : "");
+    `${publicBase}/auth/discord/callback`;
   const stateSecret =
     process.env.DISCORD_OAUTH_STATE_SECRET ||
     process.env.GUARD_API_KEY ||
