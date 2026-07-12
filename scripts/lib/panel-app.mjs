@@ -103,7 +103,7 @@ export function createPanelApp({
   });
 
   // Create PayPal order → returns { url }
-  app.post("/paypal/order", async (req, res) => {
+  app.post("/paypal/order", express.json(), async (req, res) => {
     try {
       if (!paypalPayments) {
         return res.status(503).json({ error: "PayPal not configured" });
@@ -121,6 +121,22 @@ export function createPanelApp({
     }
   });
 
+  app.post("/paypal/capture", express.json(), async (req, res) => {
+    try {
+      if (!paypalPayments) {
+        return res.status(503).json({ error: "PayPal not configured" });
+      }
+      const orderId = String(req.body?.orderID || req.body?.orderId || "");
+      if (!orderId) {
+        return res.status(400).json({ ok: false, error: "orderID required" });
+      }
+      const capture = await paypalPayments.captureOrder(orderId);
+      res.json({ ok: true, status: capture?.status || "COMPLETED", id: capture?.id || orderId });
+    } catch (e) {
+      res.status(400).json({ ok: false, error: e.message });
+    }
+  });
+
   function escapeHtml(s) {
     return String(s || "")
       .replace(/&/g, "&amp;")
@@ -129,6 +145,11 @@ export function createPanelApp({
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
   }
+
+  const paypalClientId =
+    process.env.PAYPAL_CLIENT_ID ||
+    process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ||
+    "";
 
   function payFormPage({ amount, name, error = "" }) {
     const amountLabel = Number(amount).toFixed(2);
@@ -167,12 +188,98 @@ ${errBlock}
 <label for="discord">يوزر الدسكورد</label>
 <input id="discord" name="discord" type="text" required maxlength="40" autocomplete="username" placeholder="مثال: username أو username#0000" autofocus/>
 <p class="hint">مطلوب عشان نعرف لمن نسلّم الطلب بعد الدفع. اكتب يوزرك الحالي في دسكورد.</p>
-<button type="submit">متابعة للدفع عبر PayPal</button>
+<button type="submit">متابعة لخيارات الدفع</button>
 </form>
 </div></body></html>`;
   }
 
-  // Checkout gate: collect Discord username, then create PayPal order
+  function payCheckoutPage({ amount, name, discordUser }) {
+    const amountLabel = Number(amount).toFixed(2);
+    const safeName = escapeHtml(name);
+    const safeUser = escapeHtml(String(discordUser || "").replace(/^@+/, ""));
+    const clientId = escapeHtml(paypalClientId);
+    if (!paypalClientId) {
+      return `<h1>PayPal Client ID ناقص</h1>`;
+    }
+    return `<!doctype html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>الدفع — codeX</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:#f5f5f5;color:#111;font-family:"Segoe UI",Tahoma,sans-serif;display:grid;place-items:center;padding:1.25rem}
+.wrap{width:100%;max-width:420px}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:.85rem;font-size:.95rem}
+.top .name{font-weight:600}
+.card{background:#fff;border-radius:16px;padding:1.25rem 1.2rem 1.4rem;box-shadow:0 8px 30px rgba(0,0,0,.08)}
+h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
+.row{display:flex;justify-content:space-between;margin-bottom:1rem;font-size:1rem}
+.row strong{font-size:1.05rem}
+.sub{margin:0 0 .85rem;color:#555;font-size:.9rem}
+.sep{display:flex;align-items:center;gap:.6rem;margin:1rem 0 .85rem;color:#777;font-size:.85rem}
+.sep:before,.sep:after{content:"";flex:1;height:1px;background:#e5e5e5}
+#paypal-buttons{min-height:140px}
+.msg{margin-top:.9rem;color:#b91c1c;font-size:.88rem;display:none}
+.foot{margin-top:1rem;text-align:center;color:#888;font-size:.78rem}
+</style>
+<script src="https://www.paypal.com/sdk/js?client-id=${clientId}&currency=USD&intent=capture&components=buttons&enable-funding=venmo,paylater,card"></script>
+</head><body>
+<div class="wrap">
+  <div class="top"><span class="amt">${amountLabel} USD</span><span class="name">${safeName}</span></div>
+  <div class="card">
+    <h1>موجز الطلب</h1>
+    <div class="row"><span>الإجمالي</span><strong>${amountLabel} USD</strong></div>
+    <p class="sub">دسكورد: @${safeUser}</p>
+    <p class="sub">خيارات الدفع الإلكتروني السريع</p>
+    <div id="paypal-buttons"></div>
+    <div class="sep">أو الدفع بالبطاقة</div>
+    <div id="card-button"></div>
+    <p class="msg" id="err"></p>
+  </div>
+  <p class="foot">مدعوم من PayPal · codeX</p>
+</div>
+<script>
+(function(){
+  var amount = ${JSON.stringify(amountLabel)};
+  var name = ${JSON.stringify(String(name))};
+  var discordUser = ${JSON.stringify(String(discordUser || "").replace(/^@+/, ""))};
+  var err = document.getElementById('err');
+  function showErr(t){ err.style.display='block'; err.textContent=t||'فشل الدفع'; }
+
+  function createOrder(){
+    return fetch('/paypal/order', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ amount: Number(amount), name: name, discordUser: discordUser, discordId: /^\\d{15,22}$/.test(discordUser)?discordUser:'' })
+    }).then(function(r){ return r.json().then(function(j){ if(!r.ok||!j.id) throw new Error(j.error||'تعذر إنشاء الطلب'); return j.id; }); });
+  }
+  function onApprove(data){
+    return fetch('/paypal/capture', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ orderID: data.orderID })
+    }).then(function(r){ return r.json().then(function(j){ if(!r.ok||!j.ok) throw new Error(j.error||'تعذر تأكيد الدفع'); window.location='/pay/success'; }); });
+  }
+  function onError(e){ showErr((e&&e.message)||'حدث خطأ أثناء الدفع'); }
+
+  var style = { layout:'vertical', color:'gold', shape:'rect', label:'paypal', height:48 };
+  if (paypal.Buttons) {
+    paypal.Buttons({ style: style, createOrder: createOrder, onApprove: onApprove, onError: onError }).render('#paypal-buttons');
+    var cardBtn = paypal.Buttons({
+      fundingSource: paypal.FUNDING.CARD,
+      style: { layout:'vertical', color:'black', shape:'rect', label:'pay', height:48 },
+      createOrder: createOrder,
+      onApprove: onApprove,
+      onError: onError
+    });
+    if (cardBtn.isEligible()) cardBtn.render('#card-button');
+  }
+})();
+</script>
+</body></html>`;
+  }
+
+  // Checkout gate: collect Discord username, then show PayPal button stack
   app.get("/pay", async (req, res) => {
     try {
       if (!paypalPayments) {
@@ -191,20 +298,15 @@ ${errBlock}
           .type("html")
           .send("<h1>خطأ</h1><p>المبلغ غير صالح. استخدم مثلاً /pay?amount=10&name=خدمة</p>");
       }
-      // Allow skipping form only if discord already provided (staff/deep-links)
       const discord = String(
         req.query.discord || req.query.user || req.query.u || req.query.d || "",
       ).trim();
       if (!discord) {
         return res.type("html").send(payFormPage({ amount, name }));
       }
-      const order = await paypalPayments.createOrder({
-        name,
-        amountMajor: amount,
-        discordId: /^\d{15,22}$/.test(discord) ? discord : "",
-        discordUser: discord,
-      });
-      return res.redirect(303, order.url);
+      return res
+        .type("html")
+        .send(payCheckoutPage({ amount, name, discordUser: discord }));
     } catch (e) {
       res
         .status(400)
@@ -235,13 +337,9 @@ ${errBlock}
           .type("html")
           .send(payFormPage({ amount, name, error: "اكتب يوزر الدسكورد قبل الدفع" }));
       }
-      const order = await paypalPayments.createOrder({
-        name,
-        amountMajor: amount,
-        discordId: /^\d{15,22}$/.test(discord) ? discord : "",
-        discordUser: discord,
-      });
-      return res.redirect(303, order.url);
+      return res
+        .type("html")
+        .send(payCheckoutPage({ amount, name, discordUser: discord }));
     } catch (e) {
       const amount = Number(req.body?.amount);
       const name = String(req.body?.name || "codeX — خدمة");
