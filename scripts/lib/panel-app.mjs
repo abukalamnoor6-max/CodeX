@@ -17,6 +17,8 @@ export function createPanelApp({
   postDeliveryOrder,
   stripePayments = null,
   onStripePaid = null,
+  moyasarPayments = null,
+  onMoyasarPaid = null,
 }) {
   const app = express();
   app.use(cors());
@@ -48,6 +50,24 @@ export function createPanelApp({
 
   app.use(express.json({ limit: "1mb" }));
 
+  // Moyasar invoice paid callback (JSON body)
+  app.post("/moyasar/callback", async (req, res) => {
+    try {
+      if (!moyasarPayments) {
+        return res.status(503).json({ error: "Moyasar not configured" });
+      }
+      const invoice = req.body || {};
+      const status = String(invoice.status || "").toLowerCase();
+      if (status === "paid" && typeof onMoyasarPaid === "function") {
+        await onMoyasarPaid(invoice);
+      }
+      res.json({ ok: true });
+    } catch (e) {
+      console.error("moyasar callback error:", e.message);
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
   // Delivery webhook (existing)
   app.post("/delivery-order", async (req, res) => {
     try {
@@ -64,6 +84,7 @@ export function createPanelApp({
       ok: true,
       user: client.user?.tag || null,
       stripe: Boolean(stripePayments),
+      moyasar: Boolean(moyasarPayments),
     });
   });
 
@@ -119,6 +140,52 @@ export function createPanelApp({
         .status(400)
         .type("html")
         .send(`<h1>خطأ</h1><p>${e.message}</p>`);
+    }
+  });
+
+  // Moyasar invoice link: /pay/moyasar?amount=50&name=بوت
+  app.get("/pay/moyasar", async (req, res) => {
+    try {
+      if (!moyasarPayments) {
+        return res
+          .status(503)
+          .type("html")
+          .send(
+            "<h1>Moyasar غير مضبوط</h1><p>أضف MOYASAR_SECRET_KEY في Railway.</p>",
+          );
+      }
+      const amount = Number(req.query.amount || req.query.a);
+      const name = String(req.query.name || req.query.n || "codeX — خدمة");
+      const discordId = String(req.query.discord || req.query.d || "");
+      const invoice = await moyasarPayments.createInvoice({
+        name,
+        amountMajor: amount,
+        discordId,
+      });
+      if (!invoice?.url) throw new Error("Moyasar did not return invoice url");
+      res.redirect(303, invoice.url);
+    } catch (e) {
+      res
+        .status(400)
+        .type("html")
+        .send(`<h1>خطأ</h1><p>${e.message}</p>`);
+    }
+  });
+
+  app.post("/moyasar/invoice", async (req, res) => {
+    try {
+      if (!moyasarPayments) {
+        return res.status(503).json({ error: "Moyasar not configured" });
+      }
+      const { name, amount, discordId } = req.body || {};
+      const invoice = await moyasarPayments.createInvoice({
+        name: name || "codeX — خدمة",
+        amountMajor: amount,
+        discordId,
+      });
+      res.json({ ok: true, id: invoice.id, url: invoice.url, status: invoice.status });
+    } catch (e) {
+      res.status(400).json({ ok: false, error: e.message });
     }
   });
 

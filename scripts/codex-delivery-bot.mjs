@@ -32,6 +32,7 @@ import {
 } from "./lib/broadcast-ui.mjs";
 import { createPanelApp } from "./lib/panel-app.mjs";
 import { createStripePayments } from "./lib/stripe-payments.mjs";
+import { createMoyasarPayments } from "./lib/moyasar-payments.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -549,13 +550,82 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
-async function onStripePaid(session) {
+async function sendPaidInvoice({
+  invoiceNo,
+  productName,
+  amountLabel,
+  currencyLabel,
+  email = "—",
+  customerName = "عميل",
+  discordId = "",
+  paymentMethod = "Stripe",
+  modeLabel = "",
+  refId = "",
+}) {
   const channelId = STRIPE_NOTIFY_CHANNEL_ID || meta.deliveryChannelId;
   if (!channelId) {
-    console.warn("stripe paid but no notify channel");
+    console.warn("paid invoice but no notify channel");
     return;
   }
+  const staffRoleOwner =
+    process.env.DISCORD_STAFF_ROLE_OWNER || "1524961206144860333";
+  const staffRoleTeam =
+    process.env.DISCORD_STAFF_ROLE_TEAM || "1524961198360236084";
+  const paidAt = new Date().toLocaleString("ar-SA");
 
+  const channel = await client.channels.fetch(channelId);
+  const embed = new EmbedBuilder()
+    .setColor(0x22c55e)
+    .setTitle(`فاتورة codeX — ${invoiceNo} 🧾`)
+    .setDescription(
+      [
+        `<@&${staffRoleOwner}> <@&${staffRoleTeam}> طلب جديد يحتاج متابعتك`,
+        "",
+        `**رقم الفاتورة:** \`${invoiceNo}\``,
+        `**التاريخ:** ${paidAt}${modeLabel ? ` (${modeLabel})` : ""}`,
+        `**حالة الدفع:** مدفوع ✅`,
+        `**طريقة الدفع:** ${paymentMethod}`,
+        "",
+        "👤 **بيانات العميل**",
+        `**الاسم:** ${customerName}`,
+        discordId ? `**دسكورد:** <@${discordId}>` : "**دسكورد:** —",
+        `**الإيميل:** ${email}`,
+        "",
+        "📦 **ملخص المنتجات**",
+        `• ${productName} ×1 = ${amountLabel} ${currencyLabel}`,
+        "",
+        "🧾 **تفاصيل الفاتورة**",
+        `الكمية: 1 | سعر الوحدة: ${amountLabel} ${currencyLabel} | الإجمالي: **${amountLabel} ${currencyLabel}**`,
+        "",
+        `💳 الدفع ${paymentMethod} ✅ مدفوع`,
+        `💰 **الإجمالي المستحق:** ${amountLabel} ${currencyLabel}`,
+        "",
+        "✅ **إجراء مطلوب**",
+        "الطلب مدفوع — ابدأ التنفيذ وتواصل مع العميل",
+      ].join("\n"),
+    )
+    .setFooter({
+      text: `فاتورة خاصة • للمالك فقط • codeX • ${refId || invoiceNo}`,
+    })
+    .setTimestamp();
+
+  const msg = await channel.send({
+    content: `فاتورة جديدة من المتجر 🧾 <@&${staffRoleOwner}> <@&${staffRoleTeam}>`,
+    embeds: [embed],
+    components: [buildButtons(invoiceNo)],
+    allowedMentions: {
+      roles: [staffRoleOwner, staffRoleTeam],
+    },
+  });
+
+  await sendOfficialDivider(channel).catch((e) =>
+    console.warn("divider after invoice failed", e.message),
+  );
+
+  return { messageId: msg.id, channelId, invoiceNo };
+}
+
+async function onStripePaid(session) {
   const amountTotal =
     typeof session.amount_total === "number"
       ? (session.amount_total / 100).toFixed(2)
@@ -576,69 +646,55 @@ async function onStripePaid(session) {
     session.metadata?.customerName ||
     "عميل Stripe";
   const sessionId = session.id || "—";
-  const shortId = String(sessionId).replace(/^cs_test_/, "").replace(/^cs_live_/, "").slice(-8).toUpperCase();
+  const shortId = String(sessionId)
+    .replace(/^cs_test_/, "")
+    .replace(/^cs_live_/, "")
+    .slice(-8)
+    .toUpperCase();
   const invoiceNo = `CX-STRIPE-${shortId || "XXXX"}`;
-  const paidAt = session.created
-    ? new Date(session.created * 1000).toLocaleString("ar-SA")
-    : "الآن";
   const modeLabel = String(sessionId).includes("test") ? "تجريبي" : "Live";
-  const staffRoleOwner =
-    process.env.DISCORD_STAFF_ROLE_OWNER || "1524961206144860333";
-  const staffRoleTeam =
-    process.env.DISCORD_STAFF_ROLE_TEAM || "1524961198360236084";
 
-  const channel = await client.channels.fetch(channelId);
-  const embed = new EmbedBuilder()
-    .setColor(0x22c55e)
-    .setTitle(`فاتورة codeX — ${invoiceNo} 🧾`)
-    .setDescription(
-      [
-        `<@&${staffRoleOwner}> <@&${staffRoleTeam}> طلب جديد يحتاج متابعتك`,
-        "",
-        `**رقم الفاتورة:** \`${invoiceNo}\``,
-        `**التاريخ:** ${paidAt} (${modeLabel})`,
-        `**حالة الدفع:** مدفوع ✅`,
-        `**طريقة الدفع:** Stripe`,
-        "",
-        "👤 **بيانات العميل**",
-        `**الاسم:** ${customerName}`,
-        discordId
-          ? `**دسكورد:** <@${discordId}>`
-          : "**دسكورد:** —",
-        `**الإيميل:** ${email}`,
-        "",
-        "📦 **ملخص المنتجات**",
-        `• ${productName} ×1 = ${amountTotal} ${currencyLabel}`,
-        "",
-        "🧾 **تفاصيل الفاتورة**",
-        `الكمية: 1 | سعر الوحدة: ${amountTotal} ${currencyLabel} | الإجمالي: **${amountTotal} ${currencyLabel}**`,
-        "",
-        `💳 الدفع Stripe ✅ مدفوع`,
-        `💰 **الإجمالي المستحق:** ${amountTotal} ${currencyLabel}`,
-        "",
-        "✅ **إجراء مطلوب**",
-        "الطلب مدفوع — ابدأ التنفيذ وتواصل مع العميل",
-      ].join("\n"),
-    )
-    .setFooter({
-      text: `فاتورة خاصة • للمالك فقط • codeX • ${sessionId}`,
-    })
-    .setTimestamp();
-
-  const msg = await channel.send({
-    content: `فاتورة جديدة من المتجر 🧾 <@&${staffRoleOwner}> <@&${staffRoleTeam}>`,
-    embeds: [embed],
-    components: [buildButtons(invoiceNo)],
-    allowedMentions: {
-      roles: [staffRoleOwner, staffRoleTeam],
-    },
+  return sendPaidInvoice({
+    invoiceNo,
+    productName,
+    amountLabel: amountTotal,
+    currencyLabel,
+    email,
+    customerName,
+    discordId,
+    paymentMethod: "Stripe",
+    modeLabel,
+    refId: sessionId,
   });
+}
 
-  await sendOfficialDivider(channel).catch((e) =>
-    console.warn("divider after stripe invoice failed", e.message),
-  );
+async function onMoyasarPaid(invoice) {
+  const amountLabel =
+    typeof invoice.amount === "number"
+      ? (invoice.amount / 100).toFixed(2)
+      : invoice.amount_format || "?";
+  const currencyRaw = String(invoice.currency || "SAR").toLowerCase();
+  const currencyLabel = currencyRaw === "sar" ? "ر.س" : currencyRaw.toUpperCase();
+  const invoiceMeta = invoice.metadata || {};
+  const productName =
+    invoiceMeta.productName || invoice.description || "خدمة codeX";
+  const discordId = invoiceMeta.discordId || "";
+  const id = invoice.id || "—";
+  const shortId = String(id).replace(/-/g, "").slice(-8).toUpperCase();
+  const invoiceNo = `CX-MOY-${shortId || "XXXX"}`;
 
-  return { messageId: msg.id, channelId, invoiceNo };
+  return sendPaidInvoice({
+    invoiceNo,
+    productName,
+    amountLabel: String(amountLabel).replace(/[^\d.]/g, "") || amountLabel,
+    currencyLabel,
+    email: "—",
+    customerName: "عميل Moyasar",
+    discordId,
+    paymentMethod: "Moyasar",
+    modeLabel: "",
+    refId: id,
+  });
 }
 
 const stripePayments = createStripePayments({
@@ -646,6 +702,12 @@ const stripePayments = createStripePayments({
   webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
   publicBaseUrl: PUBLIC_BASE_URL,
   currency: process.env.STRIPE_CURRENCY || "aed",
+});
+
+const moyasarPayments = createMoyasarPayments({
+  secretKey: process.env.MOYASAR_SECRET_KEY || "",
+  publicBaseUrl: PUBLIC_BASE_URL,
+  currency: process.env.MOYASAR_CURRENCY || "SAR",
 });
 
 const panelApp = createPanelApp({
@@ -657,6 +719,8 @@ const panelApp = createPanelApp({
   postDeliveryOrder,
   stripePayments,
   onStripePaid,
+  moyasarPayments,
+  onMoyasarPaid,
 });
 
 panelApp.listen(PORT, "0.0.0.0", () => {
@@ -666,9 +730,20 @@ panelApp.listen(PORT, "0.0.0.0", () => {
     "stripe:",
     stripePayments ? "enabled" : "disabled (set STRIPE_SECRET_KEY)",
   );
-  if (stripePayments && PUBLIC_BASE_URL) {
-    console.log("pay example:", `${PUBLIC_BASE_URL}/pay?amount=50&name=codeX`);
-    console.log("webhook:", `${PUBLIC_BASE_URL}/stripe/webhook`);
+  console.log(
+    "moyasar:",
+    moyasarPayments ? "enabled" : "disabled (set MOYASAR_SECRET_KEY)",
+  );
+  if (PUBLIC_BASE_URL) {
+    if (stripePayments) {
+      console.log("pay stripe:", `${PUBLIC_BASE_URL}/pay?amount=50&name=codeX`);
+    }
+    if (moyasarPayments) {
+      console.log(
+        "pay moyasar:",
+        `${PUBLIC_BASE_URL}/pay/moyasar?amount=50&name=codeX`,
+      );
+    }
   }
 });
 client.login(TOKEN);
