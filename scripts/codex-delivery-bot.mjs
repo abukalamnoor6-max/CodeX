@@ -559,6 +559,7 @@ async function sendPaidInvoice({
   email = "—",
   customerName = "عميل",
   discordId = "",
+  discordUser = "",
   paymentMethod = "PayPal",
   modeLabel = "",
   refId = "",
@@ -573,6 +574,11 @@ async function sendPaidInvoice({
   const staffRoleTeam =
     process.env.DISCORD_STAFF_ROLE_TEAM || "1524961198360236084";
   const paidAt = new Date().toLocaleString("ar-SA");
+  const discordLine = discordId
+    ? `**دسكورد:** <@${discordId}>`
+    : discordUser
+      ? `**دسكورد:** \`@${String(discordUser).replace(/^@+/, "")}\``
+      : "**دسكورد:** —";
 
   const channel = await client.channels.fetch(channelId);
   const embed = new EmbedBuilder()
@@ -589,7 +595,7 @@ async function sendPaidInvoice({
         "",
         "👤 **بيانات العميل**",
         `**الاسم:** ${customerName}`,
-        discordId ? `**دسكورد:** <@${discordId}>` : "**دسكورد:** —",
+        discordLine,
         `**الإيميل:** ${email}`,
         "",
         "📦 **ملخص المنتجات**",
@@ -644,6 +650,7 @@ async function onPayPalPaid(resource) {
         currencyCode: resource?.amount?.currency_code || "USD",
         productName: resource?.custom_id || "خدمة codeX",
         discordId: "",
+        discordUser: "",
         payerName: "",
         payerEmail: "",
       };
@@ -666,14 +673,19 @@ async function onPayPalPaid(resource) {
       ? "تجريبي"
       : "Live";
 
+  const discordUser = String(parsed.discordUser || "").trim();
+  const customerName =
+    discordUser || parsed.payerName || "عميل PayPal";
+
   return sendPaidInvoice({
     invoiceNo,
     productName: parsed.productName || "خدمة codeX",
     amountLabel: String(parsed.amountValue || "?"),
     currencyLabel,
     email: parsed.payerEmail || "—",
-    customerName: parsed.payerName || "عميل PayPal",
+    customerName,
     discordId: parsed.discordId || "",
+    discordUser,
     paymentMethod: "PayPal",
     modeLabel,
     refId: parsed.captureId || parsed.orderId || "",

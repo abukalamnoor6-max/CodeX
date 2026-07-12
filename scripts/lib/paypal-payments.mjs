@@ -78,23 +78,36 @@ export function createPayPalPayments({
     return data;
   }
 
-  function encodeCustomId({ discordId = "", productName = "" } = {}) {
+  function encodeCustomId({
+    discordId = "",
+    discordUser = "",
+    productName = "",
+  } = {}) {
     // PayPal custom_id max length is 127
-    const raw = `d=${discordId}|n=${String(productName).slice(0, 80)}`;
+    const raw = `d=${discordId}|u=${encodeURIComponent(String(discordUser).slice(0, 40))}|n=${String(productName).slice(0, 60)}`;
     return raw.slice(0, 127);
   }
 
   function decodeCustomId(customId = "") {
     const s = String(customId || "");
     const discordId = (s.match(/(?:^|\|)d=([^|]*)/) || [])[1] || "";
+    let discordUser = "";
+    try {
+      discordUser = decodeURIComponent(
+        (s.match(/(?:^|\|)u=([^|]*)/) || [])[1] || "",
+      );
+    } catch {
+      discordUser = (s.match(/(?:^|\|)u=([^|]*)/) || [])[1] || "";
+    }
     const productName = (s.match(/(?:^|\|)n=([^|]*)/) || [])[1] || "";
-    return { discordId, productName };
+    return { discordId, discordUser, productName };
   }
 
   async function createOrder({
     name = "codeX — خدمة",
     amountMajor,
     discordId = "",
+    discordUser = "",
     metadata = {},
   }) {
     const amount = Number(amountMajor);
@@ -107,8 +120,16 @@ export function createPayPalPayments({
 
     const value = amount.toFixed(2);
     const productName = String(name).slice(0, 120);
+    const user = String(discordUser || metadata.discordUser || "")
+      .trim()
+      .replace(/^@+/, "")
+      .slice(0, 40);
+    const id =
+      String(discordId || "").trim() ||
+      (/^\d{15,22}$/.test(user) ? user : "");
     const customId = encodeCustomId({
-      discordId,
+      discordId: id,
+      discordUser: user,
       productName: metadata.productName || productName,
     });
 
@@ -191,6 +212,7 @@ export function createPayPalPayments({
       status: resource.status || "",
       productName: String(productName).slice(0, 120),
       discordId: custom.discordId || "",
+      discordUser: custom.discordUser || "",
       payerName:
         [resource.payer?.name?.given_name, resource.payer?.name?.surname]
           .filter(Boolean)

@@ -108,11 +108,12 @@ export function createPanelApp({
       if (!paypalPayments) {
         return res.status(503).json({ error: "PayPal not configured" });
       }
-      const { name, amount, discordId } = req.body || {};
+      const { name, amount, discordId, discordUser } = req.body || {};
       const order = await paypalPayments.createOrder({
         name: name || "codeX — خدمة",
         amountMajor: amount,
         discordId,
+        discordUser,
       });
       res.json({ ok: true, id: order.id, url: order.url, status: order.status });
     } catch (e) {
@@ -120,7 +121,58 @@ export function createPanelApp({
     }
   });
 
-  // Quick pay link: /pay?amount=10&name=بوت
+  function escapeHtml(s) {
+    return String(s || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function payFormPage({ amount, name, error = "" }) {
+    const amountLabel = Number(amount).toFixed(2);
+    const safeName = escapeHtml(name);
+    const errBlock = error
+      ? `<p class="err">${escapeHtml(error)}</p>`
+      : "";
+    return `<!doctype html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>إتمام الطلب — codeX</title>
+<style>
+:root{--bg:#0b1220;--card:#121a2b;--line:#243049;--text:#e8eefc;--muted:#9fb0cc;--accent:#2dd4bf;--err:#f87171}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:grid;place-items:center;padding:1.25rem;font-family:"Segoe UI",Tahoma,sans-serif;background:radial-gradient(1200px 600px at 80% -10%,#1a2742 0%,var(--bg) 55%);color:var(--text)}
+.card{width:100%;max-width:440px;padding:1.6rem;border:1px solid var(--line);border-radius:18px;background:rgba(18,26,43,.92);box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.brand{font-size:.85rem;letter-spacing:.08em;color:var(--accent);margin:0 0 .35rem;font-weight:700}
+h1{margin:0 0 .75rem;font-size:1.35rem}
+.meta{margin:0 0 1.1rem;color:var(--muted);line-height:1.7;font-size:.95rem}
+.meta strong{color:var(--text)}
+label{display:block;margin:0 0 .4rem;font-size:.92rem}
+input{width:100%;padding:.85rem 1rem;border-radius:12px;border:1px solid var(--line);background:#0d1524;color:var(--text);font-size:1rem;outline:none}
+input:focus{border-color:var(--accent)}
+.hint{margin:.45rem 0 1.1rem;color:var(--muted);font-size:.82rem;line-height:1.5}
+button{width:100%;border:0;border-radius:12px;padding:.95rem 1rem;background:linear-gradient(135deg,#14b8a6,#0d9488);color:#041016;font-weight:700;font-size:1rem;cursor:pointer}
+button:hover{filter:brightness(1.05)}
+.err{color:var(--err);background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.25);padding:.7rem .85rem;border-radius:10px;margin:0 0 1rem;font-size:.9rem}
+</style></head><body><div class="card">
+<p class="brand">codeX</p>
+<h1>قبل الدفع</h1>
+<p class="meta">الطلب: <strong>${safeName}</strong><br/>المبلغ: <strong>${amountLabel} USD</strong></p>
+${errBlock}
+<form method="POST" action="/pay">
+<input type="hidden" name="amount" value="${escapeHtml(amountLabel)}"/>
+<input type="hidden" name="name" value="${safeName}"/>
+<label for="discord">يوزر الدسكورد</label>
+<input id="discord" name="discord" type="text" required maxlength="40" autocomplete="username" placeholder="مثال: username أو username#0000" autofocus/>
+<p class="hint">مطلوب عشان نعرف لمن نسلّم الطلب بعد الدفع. اكتب يوزرك الحالي في دسكورد.</p>
+<button type="submit">متابعة للدفع عبر PayPal</button>
+</form>
+</div></body></html>`;
+  }
+
+  // Checkout gate: collect Discord username, then create PayPal order
   app.get("/pay", async (req, res) => {
     try {
       if (!paypalPayments) {
@@ -133,18 +185,76 @@ export function createPanelApp({
       }
       const amount = Number(req.query.amount || req.query.a);
       const name = String(req.query.name || req.query.n || "codeX — خدمة");
-      const discordId = String(req.query.discord || req.query.d || "");
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return res
+          .status(400)
+          .type("html")
+          .send("<h1>خطأ</h1><p>المبلغ غير صالح. استخدم مثلاً /pay?amount=10&name=خدمة</p>");
+      }
+      // Allow skipping form only if discord already provided (staff/deep-links)
+      const discord = String(
+        req.query.discord || req.query.user || req.query.u || req.query.d || "",
+      ).trim();
+      if (!discord) {
+        return res.type("html").send(payFormPage({ amount, name }));
+      }
       const order = await paypalPayments.createOrder({
         name,
         amountMajor: amount,
-        discordId,
+        discordId: /^\d{15,22}$/.test(discord) ? discord : "",
+        discordUser: discord,
       });
-      res.redirect(303, order.url);
+      return res.redirect(303, order.url);
     } catch (e) {
       res
         .status(400)
         .type("html")
-        .send(`<h1>خطأ</h1><p>${e.message}</p>`);
+        .send(`<h1>خطأ</h1><p>${escapeHtml(e.message)}</p>`);
+    }
+  });
+
+  app.post("/pay", express.urlencoded({ extended: false }), async (req, res) => {
+    try {
+      if (!paypalPayments) {
+        return res.status(503).type("html").send("<h1>PayPal غير مضبوط</h1>");
+      }
+      const amount = Number(req.body?.amount);
+      const name = String(req.body?.name || "codeX — خدمة");
+      const discord = String(req.body?.discord || "")
+        .trim()
+        .replace(/^@+/, "");
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return res
+          .status(400)
+          .type("html")
+          .send("<h1>خطأ</h1><p>المبلغ غير صالح</p>");
+      }
+      if (!discord || discord.length < 2) {
+        return res
+          .status(400)
+          .type("html")
+          .send(payFormPage({ amount, name, error: "اكتب يوزر الدسكورد قبل الدفع" }));
+      }
+      const order = await paypalPayments.createOrder({
+        name,
+        amountMajor: amount,
+        discordId: /^\d{15,22}$/.test(discord) ? discord : "",
+        discordUser: discord,
+      });
+      return res.redirect(303, order.url);
+    } catch (e) {
+      const amount = Number(req.body?.amount);
+      const name = String(req.body?.name || "codeX — خدمة");
+      if (Number.isFinite(amount) && amount > 0) {
+        return res
+          .status(400)
+          .type("html")
+          .send(payFormPage({ amount, name, error: e.message }));
+      }
+      res
+        .status(400)
+        .type("html")
+        .send(`<h1>خطأ</h1><p>${escapeHtml(e.message)}</p>`);
     }
   });
 
