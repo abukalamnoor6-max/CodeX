@@ -181,6 +181,8 @@ label{display:block;margin:0 0 .4rem;font-size:.92rem}
 input{width:100%;padding:.85rem 1rem;border-radius:12px;border:1px solid var(--line);background:#0d1524;color:var(--text);font-size:1rem;outline:none}
 input:focus{border-color:var(--accent)}
 .hint{margin:.4rem 0 0;color:var(--muted);font-size:.8rem;line-height:1.5}
+.why{margin:0 0 1.15rem;padding:.85rem 1rem;border-radius:12px;border:1px solid rgba(45,212,191,.22);background:rgba(45,212,191,.07);color:var(--text);font-size:.88rem;line-height:1.65}
+.why strong{color:var(--accent)}
 button{width:100%;border:0;border-radius:12px;padding:.95rem 1rem;background:linear-gradient(135deg,#14b8a6,#0d9488);color:#041016;font-weight:700;font-size:1rem;cursor:pointer;margin-top:.35rem}
 button:hover{filter:brightness(1.05)}
 .err{color:var(--err);background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.25);padding:.7rem .85rem;border-radius:10px;margin:0 0 1rem;font-size:.9rem}
@@ -189,6 +191,7 @@ button:hover{filter:brightness(1.05)}
 <p class="brand">𝐂𝐨𝐝𝐞𝐗</p>
 <h1>قبل الدفع</h1>
 <p class="meta">الطلب: <strong>${safeName}</strong><br/>المبلغ: <strong>${amountLabel} USD</strong></p>
+<p class="why"><strong>ليش نطلب البيانات؟</strong><br/>عشان نتأكد من <strong>العميل اللي اشترى</strong> بالضبط، ونربط الدفع بحسابك في دسكورد، ونسلّم الطلب لنفس الشخص بدون لخبطة أو تأخير.</p>
 ${errBlock}
 <form method="POST" action="/pay">
 <input type="hidden" name="amount" value="${escapeHtml(amountLabel)}"/>
@@ -196,12 +199,12 @@ ${errBlock}
 <div class="field">
 <label for="discord">اليوزر <span class="badge">اسم الحساب</span></label>
 <input id="discord" name="discord" type="text" required maxlength="40" autocomplete="username" placeholder="مثال: username" value="${escapeHtml(discord)}" autofocus/>
-<p class="hint">يوزر دسكورد الحالي (مو الديسپلاي نيم القديمًا).</p>
+<p class="hint">يوزر دسكورد الحالي (مو الديسپلاي نيم القديمًا) — عشان نعرف مين العميل اللي دفع.</p>
 </div>
 <div class="field">
 <label for="discordId">كوبي يوزر <span class="badge">آيدي الحساب</span></label>
 <input id="discordId" name="discordId" type="text" required maxlength="22" inputmode="numeric" pattern="\\d{15,22}" placeholder="مثال: 123456789012345678" value="${escapeHtml(discordId)}"/>
-<p class="hint">من دسكورد: الإعدادات ← متقدم ← وضع المطوّر ← يمين على حسابك ← نسخ معرّف المستخدم.</p>
+<p class="hint">للتأكيد النهائي على حسابك وتسليم الطلب لك مباشرة. من دسكورد: الإعدادات ← متقدم ← وضع المطوّر ← يمين على حسابك ← نسخ معرّف المستخدم.</p>
 </div>
 <button type="submit">متابعة لخيارات الدفع</button>
 </form>
