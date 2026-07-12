@@ -59,7 +59,7 @@ const PUBLIC_BASE_URL = (
     : "")
 ).replace(/\/$/, "");
 const STRIPE_NOTIFY_CHANNEL_ID =
-  process.env.STRIPE_NOTIFY_CHANNEL_ID || DELIVERY_CHANNEL_ID;
+  process.env.STRIPE_NOTIFY_CHANNEL_ID || "1524971495921684601";
 
 if (!TOKEN) {
   console.error("Missing DISCORD_BOT_TOKEN");
@@ -555,41 +555,90 @@ async function onStripePaid(session) {
     console.warn("stripe paid but no notify channel");
     return;
   }
+
   const amountTotal =
     typeof session.amount_total === "number"
       ? (session.amount_total / 100).toFixed(2)
       : "?";
-  const currency = String(session.currency || "aed").toUpperCase();
+  const currencyRaw = String(session.currency || "aed").toLowerCase();
+  const currencyLabel =
+    currencyRaw === "aed"
+      ? "د.إ"
+      : currencyRaw === "sar"
+        ? "ر.س"
+        : currencyRaw.toUpperCase();
   const productName = session.metadata?.productName || "خدمة codeX";
   const discordId = session.metadata?.discordId || "";
-  const email = session.customer_details?.email || session.customer_email || "—";
+  const email =
+    session.customer_details?.email || session.customer_email || "—";
+  const customerName =
+    session.customer_details?.name ||
+    session.metadata?.customerName ||
+    "عميل Stripe";
   const sessionId = session.id || "—";
+  const shortId = String(sessionId).replace(/^cs_test_/, "").replace(/^cs_live_/, "").slice(-8).toUpperCase();
+  const invoiceNo = `CX-STRIPE-${shortId || "XXXX"}`;
+  const paidAt = session.created
+    ? new Date(session.created * 1000).toLocaleString("ar-SA")
+    : "الآن";
+  const modeLabel = String(sessionId).includes("test") ? "تجريبي" : "Live";
+  const staffRoleOwner =
+    process.env.DISCORD_STAFF_ROLE_OWNER || "1524961206144860333";
+  const staffRoleTeam =
+    process.env.DISCORD_STAFF_ROLE_TEAM || "1524961198360236084";
 
   const channel = await client.channels.fetch(channelId);
   const embed = new EmbedBuilder()
-    .setColor(0x635bff)
-    .setTitle("Stripe — دفعة جديدة")
+    .setColor(0x22c55e)
+    .setTitle(`فاتورة codeX — ${invoiceNo} 🧾`)
     .setDescription(
       [
-        `**المنتج:** ${productName}`,
-        `**المبلغ:** ${amountTotal} ${currency}`,
-        `**الإيميل:** ${email}`,
-        discordId ? `**دسكورد:** <@${discordId}>` : null,
-        `**Session:** \`${sessionId}\``,
+        `<@&${staffRoleOwner}> <@&${staffRoleTeam}> طلب جديد يحتاج متابعتك`,
         "",
-        "الحالة: مدفوعة (Test/Live حسب المفاتيح)",
-      ]
-        .filter(Boolean)
-        .join("\n"),
+        `**رقم الفاتورة:** \`${invoiceNo}\``,
+        `**التاريخ:** ${paidAt} (${modeLabel})`,
+        `**حالة الدفع:** مدفوع ✅`,
+        `**طريقة الدفع:** Stripe`,
+        "",
+        "👤 **بيانات العميل**",
+        `**الاسم:** ${customerName}`,
+        discordId
+          ? `**دسكورد:** <@${discordId}>`
+          : "**دسكورد:** —",
+        `**الإيميل:** ${email}`,
+        "",
+        "📦 **ملخص المنتجات**",
+        `• ${productName} ×1 = ${amountTotal} ${currencyLabel}`,
+        "",
+        "🧾 **تفاصيل الفاتورة**",
+        `الكمية: 1 | سعر الوحدة: ${amountTotal} ${currencyLabel} | الإجمالي: **${amountTotal} ${currencyLabel}**`,
+        "",
+        `💳 الدفع Stripe ✅ مدفوع`,
+        `💰 **الإجمالي المستحق:** ${amountTotal} ${currencyLabel}`,
+        "",
+        "✅ **إجراء مطلوب**",
+        "الطلب مدفوع — ابدأ التنفيذ وتواصل مع العميل",
+      ].join("\n"),
     )
-    .setFooter({ text: "codeX · Stripe" })
+    .setFooter({
+      text: `فاتورة خاصة • للمالك فقط • codeX • ${sessionId}`,
+    })
     .setTimestamp();
 
-  await channel.send({
-    content: `<@${OWNER_ID}>`,
+  const msg = await channel.send({
+    content: `فاتورة جديدة من المتجر 🧾 <@&${staffRoleOwner}> <@&${staffRoleTeam}>`,
     embeds: [embed],
-    allowedMentions: { users: [OWNER_ID] },
+    components: [buildButtons(invoiceNo)],
+    allowedMentions: {
+      roles: [staffRoleOwner, staffRoleTeam],
+    },
   });
+
+  await sendOfficialDivider(channel).catch((e) =>
+    console.warn("divider after stripe invoice failed", e.message),
+  );
+
+  return { messageId: msg.id, channelId, invoiceNo };
 }
 
 const stripePayments = createStripePayments({
