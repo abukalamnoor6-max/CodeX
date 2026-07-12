@@ -321,6 +321,9 @@ export async function openTicket(interaction, typeKey) {
       }
     } catch {}
     if (!hasCustomerRank(member)) {
+      const rankHelpChannelId =
+        process.env.DISCORD_CUSTOMER_RANK_CHANNEL_ID ||
+        "1524972946874171412";
       await interaction.reply({
         content: [
           "⛔ تذكرة **استلام طلب** مخصّصة لرتب العملاء فقط:",
@@ -329,8 +332,20 @@ export async function openTicket(interaction, typeKey) {
           "• Premium Client",
           "• Client",
           "",
+          `شرح مفصّل كيف تاخذ الرتبة: <#${rankHelpChannelId}>`,
           "إذا اشتريت وما عندك الرتبة: اربط Discord من المتجر أو افتح تذكرة **مشكلة**.",
         ].join("\n"),
+        components: [
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setLabel("شرح رتبة العميل")
+              .setStyle(ButtonStyle.Link)
+              .setURL(
+                `https://discord.com/channels/${interaction.guildId}/${rankHelpChannelId}`,
+              )
+              .setEmoji("📖"),
+          ),
+        ],
         flags: MessageFlags.Ephemeral,
       });
       return;
