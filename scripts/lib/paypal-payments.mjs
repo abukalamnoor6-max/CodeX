@@ -149,6 +149,7 @@ export function createPayPalPayments({
         brand_name: "codeX",
         locale: "ar-SA",
         landing_page: "NO_PREFERENCE",
+        shipping_preference: "NO_SHIPPING",
         user_action: "PAY_NOW",
         return_url: `${base}/pay/success`,
         cancel_url: `${base}/pay/cancel`,
