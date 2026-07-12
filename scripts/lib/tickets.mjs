@@ -201,14 +201,14 @@ function ticketEmbed({ opener, type, claimedById }) {
         "إذا احتجت موظف: اضغط زر **تحويل لدعم بشري** تحت رد المساعد.",
       ].join("\n"),
     )
-    .setFooter({ text: "codeX Store" })
+    .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 Store" })
     .setTimestamp();
 }
 
 export function buildTicketPanelPayload() {
   const embed = new EmbedBuilder()
     .setColor(0x0059db)
-    .setTitle("الدعم الفني — codeX")
+    .setTitle("الدعم الفني — 𝐂𝐨𝐝𝐞𝐗")
     .setDescription(
       [
         "الدعم متوفر من **10 صباحاً** إلى **10 مساءً**",
@@ -220,7 +220,7 @@ export function buildTicketPanelPayload() {
       ].join("\n"),
     )
     .setImage(bannerUrl())
-    .setFooter({ text: "codeX · التذاكر" })
+    .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · التذاكر" })
     .setTimestamp();
 
   const menu = new StringSelectMenuBuilder()
@@ -256,7 +256,7 @@ async function ensureTicketCategory(guild) {
     cat = await guild.channels.create({
       name: "🎫 │ التذاكر",
       type: ChannelType.GuildCategory,
-      reason: "codeX tickets category",
+      reason: "𝐂𝐨𝐝𝐞𝐗 tickets category",
     });
   }
   return cat;
@@ -373,7 +373,7 @@ export async function openTicket(interaction, typeKey) {
       ai: "on",
     }),
     permissionOverwrites: ticketOverwrites(guild, interaction.user.id, me.id),
-    reason: `codeX ticket: ${type.label}`,
+    reason: `𝐂𝐨𝐝𝐞𝐗 ticket: ${type.label}`,
   });
 
   const staffMentions = STAFF_ROLE_IDS.map((id) => `<@&${id}>`).join(" ");
@@ -608,7 +608,7 @@ async function alertCustomer(interaction) {
       embeds: [
         new EmbedBuilder()
           .setColor(0xed4245)
-          .setTitle("📢 تذكير من دعم codeX")
+          .setTitle("📢 تذكير من دعم 𝐂𝐨𝐝𝐞𝐗")
           .setDescription(
             [
               "فريق الدعم بانتظار ردك على تذكرتك.",
@@ -617,7 +617,7 @@ async function alertCustomer(interaction) {
               `[افتح التذكرة](${jumpUrl})`,
             ].join("\n"),
           )
-          .setFooter({ text: "codeX · Support" })
+          .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Support" })
           .setTimestamp(),
       ],
       components: [
@@ -663,7 +663,7 @@ export async function closeTicketByChannel({
   try {
     const lines = [
       "========================================",
-      "         codeX — أرشيف تذكرة",
+      "         𝐂𝐨𝐝𝐞𝐗 — أرشيف تذكرة",
       "========================================",
       `الروم: #${channel.name}`,
       `آيدي الروم: ${channel.id}`,
@@ -789,7 +789,7 @@ export async function closeTicketByChannel({
 
   setTimeout(async () => {
     try {
-      await channel.delete("codeX ticket closed");
+      await channel.delete("𝐂𝐨𝐝𝐞𝐗 ticket closed");
     } catch (e) {
       console.warn("ticket delete failed", e.message);
     }

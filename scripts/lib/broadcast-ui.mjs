@@ -85,7 +85,7 @@ export function attachBroadcastUi({ client, store, broadcast, ownerId, guildId }
         }
         const counts = await broadcast.countTargets(i.guildId);
         const embed = new EmbedBuilder()
-          .setTitle("📢 نظام البرودكاست — codeX")
+          .setTitle("📢 نظام البرودكاست — 𝐂𝐨𝐝𝐞𝐗")
           .setDescription("اختر نوع الإرسال من القائمة تحت")
           .setColor(0x2dd4bf)
           .addFields(

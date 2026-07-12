@@ -82,7 +82,7 @@ export async function sendWelcome(member) {
   }
 
   await channel.send({
-    content: `مرحباً <@${member.id}> في **codeX** 🖤`,
+    content: `مرحباً <@${member.id}> في **𝐂𝐨𝐝𝐞𝐗** 🖤`,
     files: [file],
     allowedMentions: { users: [member.id] },
   });
@@ -99,11 +99,11 @@ export async function sendWelcomeFallback(member) {
     embeds: [
       new EmbedBuilder()
         .setColor(0x000000)
-        .setTitle("أهلاً بك في codeX")
+        .setTitle("أهلاً بك في 𝐂𝐨𝐝𝐞𝐗")
         .setDescription(
           [
             `نورت السيرفر **${member.displayName}**`,
-            "نتمنى لك تجربة مميزة مع فريق codeX",
+            "نتمنى لك تجربة مميزة مع فريق 𝐂𝐨𝐝𝐞𝐗",
             `أنت العضو رقم **${member.guild.memberCount}**`,
           ].join("\n"),
         )

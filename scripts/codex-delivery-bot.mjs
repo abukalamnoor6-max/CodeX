@@ -91,7 +91,7 @@ const STATUS = {
     staffLabel: "🟡 تم الاستلام / قيد التأكد",
     dmTitle: "تم استلام طلبك",
     dmBody:
-      "تم استلام طلبك بنجاح، وفريق codeX يقوم حالياً بالتأكد من التفاصيل والدفع.",
+      "تم استلام طلبك بنجاح، وفريق 𝐂𝐨𝐝𝐞𝐗 يقوم حالياً بالتأكد من التفاصيل والدفع.",
     sendRating: false,
   },
   confirmed: {
@@ -101,7 +101,7 @@ const STATUS = {
     embedColor: 0x0059db,
     staffLabel: "🔵 تم التأكيد / قيد التنفيذ",
     dmTitle: "تم تأكيد طلبك",
-    dmBody: "تم تأكيد طلبك، وفريق codeX بدأ العمل عليه الآن.",
+    dmBody: "تم تأكيد طلبك، وفريق 𝐂𝐨𝐝𝐞𝐗 بدأ العمل عليه الآن.",
     sendRating: false,
   },
   done: {
@@ -348,7 +348,7 @@ function buildOrderEmbed(order, statusKey = "received") {
       { name: "المنتجات", value: clip(items || "—") },
       ...(order.notes ? [{ name: "ملاحظات", value: clip(order.notes) }] : []),
     )
-    .setFooter({ text: "codeX · Delivery Control" })
+    .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Delivery Control" })
     .setTimestamp();
 }
 
@@ -408,7 +408,7 @@ async function sendRatingDm(user, orderId) {
     embeds: [
       new EmbedBuilder()
         .setColor(0x10b981)
-        .setTitle("codeX — تم تسليم طلبك")
+        .setTitle("𝐂𝐨𝐝𝐞𝐗 — تم تسليم طلبك")
         .setDescription(
           [
             `تم تسليم طلبك **${orderId}** بنجاح 🎉`,
@@ -417,7 +417,7 @@ async function sendRatingDm(user, orderId) {
             "اضغط على عدد النجوم المناسب لتجربتك:",
           ].join("\n"),
         )
-        .setFooter({ text: "codeX Store · Rating" })
+        .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 Store · Rating" })
         .setTimestamp(),
     ],
     components: [buildRatingButtons(orderId)],
@@ -501,7 +501,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         embeds: [
           new EmbedBuilder()
             .setColor(0xf5d76e)
-            .setTitle("⭐ تقييم جديد — codeX")
+            .setTitle("⭐ تقييم جديد — 𝐂𝐨𝐝𝐞𝐗")
             .setDescription(
               [
                 `**الطلب:** \`${orderId}\``,
@@ -509,7 +509,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 `**التقييم:** ${starText} (${stars}/5)`,
               ].join("\n"),
             )
-            .setFooter({ text: "codeX · Reviews" })
+            .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Reviews" })
             .setTimestamp(),
         ],
       });
@@ -527,7 +527,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             .setColor(0xf5d76e)
             .setTitle("شكراً لتقييمك ⭐")
             .setDescription(
-              `تم تسجيل تقييمك لطلب **${orderId}**:\n\n${starText} (${stars}/5)\n\nشكراً لثقتك في codeX 💙`,
+              `تم تسجيل تقييمك لطلب **${orderId}**:\n\n${starText} (${stars}/5)\n\nشكراً لثقتك في 𝐂𝐨𝐝𝐞𝐗 💙`,
             )
             .setTimestamp(),
         ],
@@ -594,17 +594,17 @@ client.on(Events.InteractionCreate, async (interaction) => {
           embeds: [
             new EmbedBuilder()
               .setColor(statusEntry.embedColor)
-              .setTitle(`codeX — ${statusEntry.dmTitle}`)
+              .setTitle(`𝐂𝐨𝐝𝐞𝐗 — ${statusEntry.dmTitle}`)
               .setDescription(
                 [
                   `مرحباً، تحديث بخصوص طلبك **${orderId}**:`,
                   "",
                   statusEntry.dmBody,
                   "",
-                  "شكراً لثقتك في codeX 💙",
+                  "شكراً لثقتك في 𝐂𝐨𝐝𝐞𝐗 💙",
                 ].join("\n"),
               )
-              .setFooter({ text: "codeX Store" })
+              .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 Store" })
               .setTimestamp(),
           ],
         });
@@ -670,7 +670,7 @@ async function sendPaidInvoice({
   const channel = await client.channels.fetch(channelId);
   const embed = new EmbedBuilder()
     .setColor(0x22c55e)
-    .setTitle(`فاتورة codeX — ${invoiceNo} 🧾`)
+    .setTitle(`فاتورة 𝐂𝐨𝐝𝐞𝐗 — ${invoiceNo} 🧾`)
     .setDescription(
       [
         `<@&${staffRoleOwner}> <@&${staffRoleTeam}> طلب جديد يحتاج متابعتك`,
@@ -700,7 +700,7 @@ async function sendPaidInvoice({
       ].join("\n"),
     )
     .setFooter({
-      text: `فاتورة خاصة • للمالك فقط • codeX • ${refId || invoiceNo}`,
+      text: `فاتورة خاصة • للمالك فقط • 𝐂𝐨𝐝𝐞𝐗 • ${refId || invoiceNo}`,
     })
     .setTimestamp();
 
@@ -736,7 +736,7 @@ async function onPayPalPaid(resource) {
         captureId: resource?.id || "",
         amountValue: resource?.amount?.value || "?",
         currencyCode: resource?.amount?.currency_code || "USD",
-        productName: resource?.custom_id || "خدمة codeX",
+        productName: resource?.custom_id || "خدمة 𝐂𝐨𝐝𝐞𝐗",
         discordId: "",
         discordUser: "",
         payerName: "",
@@ -767,7 +767,7 @@ async function onPayPalPaid(resource) {
 
   return sendPaidInvoice({
     invoiceNo,
-    productName: parsed.productName || "خدمة codeX",
+    productName: parsed.productName || "خدمة 𝐂𝐨𝐝𝐞𝐗",
     amountLabel: String(parsed.amountValue || "?"),
     currencyLabel,
     email: parsed.payerEmail || "—",
@@ -799,7 +799,7 @@ panelApp.listen(PORT, "0.0.0.0", () => {
     paypalPayments ? "enabled" : "disabled (set PAYPAL_CLIENT_ID + SECRET)",
   );
   if (PUBLIC_BASE_URL && paypalPayments) {
-    console.log("pay paypal:", `${PUBLIC_BASE_URL}/pay?amount=10&name=codeX`);
+    console.log("pay paypal:", `${PUBLIC_BASE_URL}/pay?amount=10&name=%F0%9D%90%82%F0%9D%90%A8%F0%9D%90%9D%F0%9D%90%9E%F0%9D%90%97`);
     console.log("paypal webhook:", `${PUBLIC_BASE_URL}/paypal/webhook`);
   }
 });

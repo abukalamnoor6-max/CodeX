@@ -14,14 +14,13 @@ if (!TOKEN) {
 }
 
 const description = [
-  "**متجر codeX الرسمي**",
+  "**متجر 𝐂𝐨𝐝𝐞𝐗 الرسمي**",
   "",
   "🔗 https://codexshop112.rmz.gg",
   "",
   "### الخدمات",
   "• برمجة فايف إم",
   "• مابات فايف إم بشعار سيرفرك",
-  "• سيارة خاصة",
   "• بوت دسكورد متقدم",
   "• بوت دسكورد متوسط",
   "• بوت دسكورد أساسي",
@@ -53,9 +52,9 @@ client.once("clientReady", async () => {
 
     const embed = new EmbedBuilder()
       .setColor(0x0059db)
-      .setTitle("متجر codeX الرسمي")
+      .setTitle("متجر 𝐂𝐨𝐝𝐞𝐗 الرسمي")
       .setDescription(description)
-      .setFooter({ text: "codeX · Premium Digital Services" })
+      .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Premium Digital Services" })
       .setTimestamp();
 
     await channel.send({ embeds: [embed] });

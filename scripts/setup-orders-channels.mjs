@@ -225,7 +225,7 @@ client.once("clientReady", async () => {
             title: "📊│الطلبات — خاص",
             description:
               "هذا الروم **خاص فيك فقط**.\nكل طلب جديد من المتجر يوصل هنا كفاتورة عبر الويب هوك.",
-            footer: { text: "codeX · Private Orders" },
+            footer: { text: "𝐂𝐨𝐝𝐞𝐗 · Private Orders" },
           },
         ],
       });
@@ -248,7 +248,7 @@ client.once("clientReady", async () => {
               { name: "الإجمالي", value: "**0 ر.س**", inline: true },
             ],
             timestamp: new Date().toISOString(),
-            footer: { text: "codeX Store · test" },
+            footer: { text: "𝐂𝐨𝐝𝐞𝐗 Store · test" },
           },
         ],
       }),

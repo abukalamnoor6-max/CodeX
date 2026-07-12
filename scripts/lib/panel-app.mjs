@@ -110,7 +110,7 @@ export function createPanelApp({
       }
       const { name, amount, discordId, discordUser } = req.body || {};
       const order = await paypalPayments.createOrder({
-        name: name || "codeX — خدمة",
+        name: name || "𝐂𝐨𝐝𝐞𝐗 — خدمة",
         amountMajor: amount,
         discordId,
         discordUser,
@@ -166,7 +166,7 @@ export function createPanelApp({
     return `<!doctype html>
 <html lang="ar" dir="rtl"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>إتمام الطلب — codeX</title>
+<title>إتمام الطلب — 𝐂𝐨𝐝𝐞𝐗</title>
 <style>
 :root{--bg:#0b1220;--card:#121a2b;--line:#243049;--text:#e8eefc;--muted:#9fb0cc;--accent:#2dd4bf;--err:#f87171}
 *{box-sizing:border-box}
@@ -186,7 +186,7 @@ button:hover{filter:brightness(1.05)}
 .err{color:var(--err);background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.25);padding:.7rem .85rem;border-radius:10px;margin:0 0 1rem;font-size:.9rem}
 .badge{display:inline-block;font-size:.72rem;padding:.15rem .45rem;border-radius:999px;background:rgba(45,212,191,.12);color:var(--accent);margin-inline-start:.35rem;vertical-align:middle}
 </style></head><body><div class="card">
-<p class="brand">codeX</p>
+<p class="brand">𝐂𝐨𝐝𝐞𝐗</p>
 <h1>قبل الدفع</h1>
 <p class="meta">الطلب: <strong>${safeName}</strong><br/>المبلغ: <strong>${amountLabel} USD</strong></p>
 ${errBlock}
@@ -220,7 +220,7 @@ ${errBlock}
     return `<!doctype html>
 <html lang="ar" dir="rtl"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>الدفع — codeX</title>
+<title>الدفع — 𝐂𝐨𝐝𝐞𝐗</title>
 <style>
 *{box-sizing:border-box}
 body{margin:0;min-height:100vh;background:#f5f5f5;color:#111;font-family:"Segoe UI",Tahoma,sans-serif;display:grid;place-items:center;padding:1.25rem}
@@ -249,7 +249,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     <div id="paypal-buttons"></div>
     <p class="msg" id="err"></p>
   </div>
-  <p class="foot">مدعوم من PayPal · codeX</p>
+  <p class="foot">مدعوم من PayPal · 𝐂𝐨𝐝𝐞𝐗</p>
 </div>
 <script>
 (function(){
@@ -307,7 +307,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
           );
       }
       const amount = Number(req.query.amount || req.query.a);
-      const name = String(req.query.name || req.query.n || "codeX — خدمة");
+      const name = String(req.query.name || req.query.n || "𝐂𝐨𝐝𝐞𝐗 — خدمة");
       if (!Number.isFinite(amount) || amount <= 0) {
         return res
           .status(400)
@@ -352,7 +352,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
         return res.status(503).type("html").send("<h1>PayPal غير مضبوط</h1>");
       }
       const amount = Number(req.body?.amount);
-      const name = String(req.body?.name || "codeX — خدمة");
+      const name = String(req.body?.name || "𝐂𝐨𝐝𝐞𝐗 — خدمة");
       const discord = String(req.body?.discord || "")
         .trim()
         .replace(/^@+/, "");
@@ -405,7 +405,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
         );
     } catch (e) {
       const amount = Number(req.body?.amount);
-      const name = String(req.body?.name || "codeX — خدمة");
+      const name = String(req.body?.name || "𝐂𝐨𝐝𝐞𝐗 — خدمة");
       const discord = String(req.body?.discord || "")
         .trim()
         .replace(/^@+/, "");
@@ -434,21 +434,21 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
   app.get("/pay/success", (req, res) => {
     res.type("html").send(`<!doctype html>
 <html lang="ar" dir="rtl"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>تم الدفع — codeX</title>
+<title>تم الدفع — 𝐂𝐨𝐝𝐞𝐗</title>
 <style>
 body{font-family:system-ui,sans-serif;background:#0b1220;color:#e8eefc;display:grid;place-items:center;min-height:100vh;margin:0}
 .card{max-width:420px;padding:2rem;border:1px solid #1e2a44;border-radius:16px;background:#121a2b;text-align:center}
 h1{margin:0 0 .5rem;font-size:1.4rem}p{opacity:.85;line-height:1.6}
 </style></head><body><div class="card">
 <h1>تم الدفع بنجاح</h1>
-<p>شكراً لثقتك في codeX. راح يوصلك تأكيد على دسكورد قريب إن شاء الله.</p>
+<p>شكراً لثقتك في 𝐂𝐨𝐝𝐞𝐗. راح يوصلك تأكيد على دسكورد قريب إن شاء الله.</p>
 </div></body></html>`);
   });
 
   app.get("/pay/cancel", (req, res) => {
     res.type("html").send(`<!doctype html>
 <html lang="ar" dir="rtl"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>تم الإلغاء — codeX</title>
+<title>تم الإلغاء — 𝐂𝐨𝐝𝐞𝐗</title>
 <style>
 body{font-family:system-ui,sans-serif;background:#0b1220;color:#e8eefc;display:grid;place-items:center;min-height:100vh;margin:0}
 .card{max-width:420px;padding:2rem;border:1px solid #1e2a44;border-radius:16px;background:#121a2b;text-align:center}

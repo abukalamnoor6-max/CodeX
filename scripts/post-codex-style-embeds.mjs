@@ -21,7 +21,7 @@ function embed(title, description, extra = {}) {
     .setColor(0x0059db)
     .setTitle(title)
     .setDescription(description)
-    .setFooter({ text: "codeX · Premium Digital Services" })
+    .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Premium Digital Services" })
     .setTimestamp();
   if (extra.thumbnail) e.setThumbnail(extra.thumbnail);
   return e;
@@ -62,7 +62,7 @@ client.once("clientReady", async () => {
 
     // 1) رتبة العميل — مثل الصورة الأولى
     const rankEmbed = embed(
-      "رتبة العميل في codeX",
+      "رتبة العميل في 𝐂𝐨𝐝𝐞𝐗",
       [
         "السلام عليكم ورحمة الله وبركاته",
         "",
@@ -130,7 +130,7 @@ client.once("clientReady", async () => {
     );
 
     const supportEmbed = embed(
-      "الدعم — سبورت codeX",
+      "الدعم — سبورت 𝐂𝐨𝐝𝐞𝐗",
       [
         "هنا قسم **السبورت** لمتابعة الطلبات والمشاكل بعد الشراء.",
         "",
@@ -158,14 +158,13 @@ client.once("clientReady", async () => {
     if (store) {
       await clearBotMessages(store);
       const storeServices = embed(
-        "متجر codeX الرسمي",
+        "متجر 𝐂𝐨𝐝𝐞𝐗 الرسمي",
         [
           `🔗 ${STORE_URL}`,
           "",
           "**الخدمات**",
           "• برمجة فايف إم",
           "• مابات فايف إم بشعار سيرفرك",
-          "• سيارة خاصة",
           "• بوت دسكورد متقدم / متوسط / أساسي",
           "• برمجة سيرفر دسكورد كامل",
           "• خاص المتجر",

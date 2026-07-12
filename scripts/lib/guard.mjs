@@ -139,7 +139,7 @@ function baseEmbed(color, title) {
   return new EmbedBuilder()
     .setColor(color)
     .setTitle(title)
-    .setFooter({ text: "codeX · Guard" })
+    .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Guard" })
     .setTimestamp();
 }
 
@@ -273,11 +273,11 @@ async function punish(member, reason, { timeoutMs = 10 * 60_000, deleteMsg } = {
 
   try {
     if (count >= 4) {
-      await member.ban({ reason: `codeX Guard: ${reason} (x${count})`, deleteMessageSeconds: 0 });
+      await member.ban({ reason: `𝐂𝐨𝐝𝐞𝐗 Guard: ${reason} (x${count})`, deleteMessageSeconds: 0 });
     } else if (count >= 3) {
-      await member.kick(`codeX Guard: ${reason} (x${count})`);
+      await member.kick(`𝐂𝐨𝐝𝐞𝐗 Guard: ${reason} (x${count})`);
     } else {
-      await member.timeout(timeoutMs, `codeX Guard: ${reason}`);
+      await member.timeout(timeoutMs, `𝐂𝐨𝐝𝐞𝐗 Guard: ${reason}`);
     }
   } catch (e) {
     console.warn("punish fail", e.message);
@@ -430,7 +430,7 @@ export function attachGuard(client, options = {}) {
             `\`${formatLogTime()}\``,
           ].join("\n"),
         )
-        .setFooter({ text: "codeX · Join" })
+        .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Join" })
         .setTimestamp(),
     );
 
@@ -450,7 +450,7 @@ export function attachGuard(client, options = {}) {
       try {
         await member.timeout(
           30 * 60_000,
-          "codeX Guard: حساب جديد أقل من يومين",
+          "𝐂𝐨𝐝𝐞𝐗 Guard: حساب جديد أقل من يومين",
         );
       } catch {}
       await sendLog(
@@ -510,7 +510,7 @@ export function attachGuard(client, options = {}) {
         "ban",
         new EmbedBuilder()
           .setColor(0xed4245)
-          .setTitle("تم طرد عضو من codeX! 🦿")
+          .setTitle("تم طرد عضو من 𝐂𝐨𝐝𝐞𝐗! 🦿")
           .setDescription(
             [
               "**معلومات العضو**",
@@ -528,7 +528,7 @@ export function attachGuard(client, options = {}) {
               `\`${formatLogTime()}\``,
             ].join("\n"),
           )
-          .setFooter({ text: "codeX · Kick" })
+          .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Kick" })
           .setTimestamp(),
       );
       return;
@@ -551,7 +551,7 @@ export function attachGuard(client, options = {}) {
             `\`${formatLogTime()}\``,
           ].join("\n"),
         )
-        .setFooter({ text: "codeX · Left" })
+        .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Left" })
         .setTimestamp(),
     );
   });
@@ -594,7 +594,7 @@ export function attachGuard(client, options = {}) {
             `\`${formatLogTime()}\``,
           ].join("\n"),
         )
-        .setFooter({ text: "codeX · Ban" })
+        .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Ban" })
         .setTimestamp(),
     );
   });
@@ -631,7 +631,7 @@ export function attachGuard(client, options = {}) {
             `\`${formatLogTime()}\``,
           ].join("\n"),
         )
-        .setFooter({ text: "codeX · Unban" })
+        .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Unban" })
         .setTimestamp(),
     );
   });
@@ -705,7 +705,7 @@ export function attachGuard(client, options = {}) {
             .filter(Boolean)
             .join("\n"),
         )
-        .setFooter({ text: "codeX · Chat" })
+        .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Chat" })
         .setTimestamp(),
     );
   });
@@ -763,7 +763,7 @@ export function attachGuard(client, options = {}) {
             `\`${formatLogTime()}\``,
           ].join("\n"),
         )
-        .setFooter({ text: "codeX · Chat" })
+        .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Chat" })
         .setTimestamp(),
     );
   });
@@ -870,7 +870,7 @@ export function attachGuard(client, options = {}) {
         "roles",
         new EmbedBuilder()
           .setColor(0xed4245)
-          .setTitle("✏️ تم تحديث اسم اللقب لعضو في codeX")
+          .setTitle("✏️ تم تحديث اسم اللقب لعضو في 𝐂𝐨𝐝𝐞𝐗")
           .setDescription(
             [
               memberBlock,
@@ -889,7 +889,7 @@ export function attachGuard(client, options = {}) {
               when(),
             ].join("\n"),
           )
-          .setFooter({ text: "codeX · Nickname" })
+          .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Nickname" })
           .setTimestamp(),
       );
     }
@@ -920,7 +920,7 @@ export function attachGuard(client, options = {}) {
         "roles",
         new EmbedBuilder()
           .setColor(0xed4245)
-          .setTitle("🎖️ تم ازالة رتبة من عضو في codeX")
+          .setTitle("🎖️ تم ازالة رتبة من عضو في 𝐂𝐨𝐝𝐞𝐗")
           .setDescription(
             [
               memberBlock,
@@ -937,7 +937,7 @@ export function attachGuard(client, options = {}) {
               stamp,
             ].join("\n"),
           )
-          .setFooter({ text: "codeX · Roles" })
+          .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Roles" })
           .setTimestamp(),
       );
     }
@@ -948,7 +948,7 @@ export function attachGuard(client, options = {}) {
         "roles",
         new EmbedBuilder()
           .setColor(0xed4245)
-          .setTitle("🎖️ تم اعطاء رتبة لعضو في codeX")
+          .setTitle("🎖️ تم اعطاء رتبة لعضو في 𝐂𝐨𝐝𝐞𝐗")
           .setDescription(
             [
               memberBlock,
@@ -965,7 +965,7 @@ export function attachGuard(client, options = {}) {
               stamp,
             ].join("\n"),
           )
-          .setFooter({ text: "codeX · Roles" })
+          .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Roles" })
           .setTimestamp(),
       );
 
@@ -1013,7 +1013,7 @@ export function attachGuard(client, options = {}) {
             `\`${formatLogTime()}\``,
           ].join("\n"),
         )
-        .setFooter({ text: "codeX · Roles" })
+        .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Roles" })
         .setTimestamp(),
     );
   });
@@ -1046,7 +1046,7 @@ export function attachGuard(client, options = {}) {
             `\`${formatLogTime()}\``,
           ].join("\n"),
         )
-        .setFooter({ text: "codeX · Roles" })
+        .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Roles" })
         .setTimestamp(),
     );
     await sendLog(
@@ -1162,7 +1162,7 @@ export function attachGuard(client, options = {}) {
             ...extra.flatMap((c) => ["", `**${c.title}**`, ...c.lines]),
           ].join("\n"),
         )
-        .setFooter({ text: "codeX · Roles" })
+        .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Roles" })
         .setTimestamp(),
     );
 
@@ -1240,7 +1240,7 @@ export function attachGuard(client, options = {}) {
             ...changeLines,
           ].join("\n"),
         )
-        .setFooter({ text: "codeX · Rooms" })
+        .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Rooms" })
         .setTimestamp(),
     );
   }
@@ -1269,7 +1269,7 @@ export function attachGuard(client, options = {}) {
             `\`${formatLogTime()}\``,
           ].join("\n"),
         )
-        .setFooter({ text: "codeX · Rooms" })
+        .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Rooms" })
         .setTimestamp(),
     );
   });
@@ -1301,7 +1301,7 @@ export function attachGuard(client, options = {}) {
             `\`${formatLogTime()}\``,
           ].join("\n"),
         )
-        .setFooter({ text: "codeX · Rooms" })
+        .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Rooms" })
         .setTimestamp(),
     );
     await sendLog(
@@ -1401,7 +1401,7 @@ export function attachGuard(client, options = {}) {
                 ...changeLines,
               ].join("\n"),
             )
-            .setFooter({ text: "codeX · Permissions" })
+            .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Permissions" })
             .setTimestamp(),
         );
       }

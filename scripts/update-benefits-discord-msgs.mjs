@@ -5,7 +5,7 @@ const STORE_URL = "https://codexshop112.rmz.gg";
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 function embed(title, description) {
   return new EmbedBuilder().setColor(0x0059db).setTitle(title).setDescription(description)
-    .setFooter({ text: "codeX · Premium Digital Services" }).setTimestamp();
+    .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Premium Digital Services" }).setTimestamp();
 }
 async function clearBot(channel) {
   const msgs = await channel.messages.fetch({ limit: 20 });
@@ -25,7 +25,7 @@ client.once("clientReady", async () => {
     const rank = embed("كيف تاخذ رتبة الزبون؟", [
       "السلام عليكم ورحمة الله وبركاته",
       "",
-      "رتبة الزبون صارت مربوطة بقسم **المزايا** في متجر codeX.",
+      "رتبة الزبون صارت مربوطة بقسم **المزايا** في متجر 𝐂𝐨𝐝𝐞𝐗.",
       "",
       "**وش تسوي؟**",
       `1. ادخل المتجر: ${STORE_URL}`,
@@ -41,7 +41,7 @@ client.once("clientReady", async () => {
     ].join("\n"));
 
     const waiting = embed("المزايا وربط Discord", [
-      "بعد الشراء تظهر لك ميزة **codeX Discord** في صفحة **مزاياي**.",
+      "بعد الشراء تظهر لك ميزة **𝐂𝐨𝐝𝐞𝐗 Discord** في صفحة **مزاياي**.",
       "",
       "**قيد الانتظار** = اضغط ربط Discord عشان تاخذ الرتبة.",
       "",
@@ -52,7 +52,7 @@ client.once("clientReady", async () => {
     if (store) {
       await clearBot(store);
       await store.send({ embeds: [
-        embed("متجر codeX الرسمي", [`🔗 ${STORE_URL}`, "", "**الخدمات**", "• برمجة فايف إم", "• مابات فايف إم", "• سيارة خاصة", "• بوتات دسكورد", "• سيرفر دسكورد كامل", "• خاص المتجر"].join("\n")),
+        embed("متجر 𝐂𝐨𝐝𝐞𝐗 الرسمي", [`🔗 ${STORE_URL}`, "", "**الخدمات**", "• برمجة فايف إم", "• مابات فايف إم", "• بوتات دسكورد", "• سيرفر دسكورد كامل", "• خاص المتجر"].join("\n")),
         waiting,
       ]});
       await store.send(`🛒 **رابط المتجر:** ${STORE_URL}`);
@@ -60,7 +60,7 @@ client.once("clientReady", async () => {
     if (tickets) {
       await clearBot(tickets);
       await tickets.send({ embeds: [
-        embed("الدعم — سبورت codeX", ["للدعم بعد الشراء أو مشكلة ربط المزايا:", "افتح تذكرة واكتب رقم الطلب + المشكلة بوضوح."].join("\n")),
+        embed("الدعم — سبورت 𝐂𝐨𝐝𝐞𝐗", ["للدعم بعد الشراء أو مشكلة ربط المزايا:", "افتح تذكرة واكتب رقم الطلب + المشكلة بوضوح."].join("\n")),
         embed("قوانين التكتات", ["• تذكرة واحدة لنفس المشكلة", "• ممنوع السبام", "• وضّح مشكلتك من أول رسالة", "• أرفق رقم الطلب عند طلب الرتبة/الربط", "• أي إساءة = إغلاق التذكرة"].join("\n")),
       ]});
     }

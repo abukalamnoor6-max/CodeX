@@ -111,7 +111,7 @@ export function createPayPalPayments({
   }
 
   async function createOrder({
-    name = "codeX — خدمة",
+    name = "𝐂𝐨𝐝𝐞𝐗 — خدمة",
     amountMajor,
     discordId = "",
     discordUser = "",
@@ -145,7 +145,7 @@ export function createPayPalPayments({
         .replace(/[^\w\s\-_.\u0600-\u06FF]/g, " ")
         .replace(/\s+/g, " ")
         .trim()
-        .slice(0, 120) || "codeX service";
+        .slice(0, 120) || "𝐂𝐨𝐝𝐞𝐗 service";
 
     const order = await api("POST", "/v2/checkout/orders", {
       intent: "CAPTURE",
@@ -160,7 +160,7 @@ export function createPayPalPayments({
         },
       ],
       application_context: {
-        brand_name: "codeX",
+        brand_name: "𝐂𝐨𝐝𝐞𝐗",
         shipping_preference: "NO_SHIPPING",
         user_action: "PAY_NOW",
         return_url: `${base}/pay/success`,
@@ -238,7 +238,7 @@ export function createPayPalPayments({
       resource.description ||
       resource.soft_descriptor ||
       resource.invoice_id ||
-      "خدمة codeX";
+      "خدمة 𝐂𝐨𝐝𝐞𝐗";
     return {
       captureId: resource.id || "",
       orderId,
