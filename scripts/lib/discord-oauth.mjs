@@ -131,17 +131,21 @@ export function verifyDiscordSession(token, secret, { maxAgeMs = 2 * 60 * 60 * 1
   }
 }
 
-export function buildAuthorizeUrl({ clientId, redirectUri, state }) {
+export function buildAuthorizeUrl({
+  clientId,
+  redirectUri,
+  state,
+  scopes = ["identify", "guilds.join"],
+}) {
   const u = new URL("https://discord.com/api/oauth2/authorize");
   u.searchParams.set("client_id", clientId);
   u.searchParams.set("redirect_uri", redirectUri);
   u.searchParams.set("response_type", "code");
-  u.searchParams.set("scope", "identify");
-  u.searchParams.set("prompt", "none");
+  u.searchParams.set(
+    "scope",
+    Array.isArray(scopes) ? scopes.join(" ") : String(scopes || "identify"),
+  );
   u.searchParams.set("state", state);
-  // prompt=none fails if not logged in — use consent as fallback via second try
-  // Better default: consent only when needed
-  u.searchParams.delete("prompt");
   return u.toString();
 }
 

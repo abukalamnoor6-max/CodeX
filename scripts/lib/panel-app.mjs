@@ -13,6 +13,7 @@ import {
   buildAuthorizeUrl,
   exchangeCode,
   fetchDiscordMe,
+  avatarUrl,
 } from "./discord-oauth.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -190,6 +191,57 @@ export function createPanelApp({
     process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ||
     "";
 
+  const CLIENT_ROLE_ID =
+    process.env.DISCORD_ROLE_CLIENT || "1524961186007879801";
+  const PAY_GUILD_ID =
+    guildId || process.env.DISCORD_GUILD_ID || "1524901009195798679";
+
+  async function ensureClientRole(userId, accessToken) {
+    const guild = await client.guilds.fetch(PAY_GUILD_ID);
+    let member = null;
+    try {
+      member = await guild.members.fetch(userId);
+    } catch {
+      member = null;
+    }
+    if (!member && accessToken) {
+      const botToken = process.env.DISCORD_BOT_TOKEN || "";
+      const put = await fetch(
+        `https://discord.com/api/v10/guilds/${PAY_GUILD_ID}/members/${userId}`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bot ${botToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ access_token: accessToken }),
+        },
+      );
+      // 201 created, 204 already member
+      if (put.status === 201 || put.status === 204) {
+        try {
+          member = await guild.members.fetch(userId);
+        } catch {
+          member = null;
+        }
+      } else {
+        const body = await put.json().catch(() => ({}));
+        console.warn(
+          "guilds.join failed:",
+          put.status,
+          body.message || body.code || "",
+        );
+      }
+    }
+    if (!member) {
+      return { ok: false, reason: "not_in_guild" };
+    }
+    if (!member.roles.cache.has(CLIENT_ROLE_ID)) {
+      await member.roles.add(CLIENT_ROLE_ID, "codeX pay link — Client");
+    }
+    return { ok: true, username: member.user?.username || "" };
+  }
+
   function payFormPage({
     amount,
     name,
@@ -197,18 +249,77 @@ export function createPanelApp({
     discord = "",
     discordId = "",
     lang = "ar",
+    connected = null,
+    oauthEnabled = false,
+    roleOk = null,
   }) {
     const amountLabel = Number(amount).toFixed(2);
     const safeName = escapeHtml(name);
     const initialLang = lang === "en" ? "en" : "ar";
     const errJson = JSON.stringify(error || "");
+    const hasConnected =
+      connected &&
+      connected.id &&
+      /^\d{15,22}$/.test(String(connected.id));
+    const userName = hasConnected
+      ? String(connected.username || discord || "")
+      : String(discord || "");
+    const userId = hasConnected ? String(connected.id) : String(discordId || "");
+    const av = hasConnected ? avatarUrl(connected) : "";
+    const oauthStart = `/auth/discord/start?amount=${encodeURIComponent(amountLabel)}&name=${encodeURIComponent(name)}&lang=${initialLang}`;
+    const roleNote =
+      roleOk === false
+        ? `<p class="hint center" data-i18n="roleWarn"></p>`
+        : roleOk === true
+          ? `<p class="hint center ok" data-i18n="roleOk"></p>`
+          : "";
+
+    const bodyBlock = hasConnected
+      ? `<div class="linked">
+  <img class="av" src="${escapeHtml(av)}" alt=""/>
+  <div class="linked-meta">
+    <div class="linked-name">@${escapeHtml(userName)}</div>
+    <div class="linked-sub" data-i18n="linkedSub"></div>
+  </div>
+  <a class="unlink" href="/auth/discord/logout?amount=${encodeURIComponent(amountLabel)}&name=${encodeURIComponent(name)}&lang=${initialLang}" data-i18n="switch"></a>
+</div>
+${roleNote}
+<form method="POST" action="/pay">
+<input type="hidden" name="amount" value="${escapeHtml(amountLabel)}"/>
+<input type="hidden" name="name" value="${safeName}"/>
+<input type="hidden" name="lang" id="langInput" value="${initialLang}"/>
+<input type="hidden" name="discord" value="${escapeHtml(userName)}"/>
+<input type="hidden" name="discordId" value="${escapeHtml(userId)}"/>
+<button class="submit" type="submit" data-i18n="submit"></button>
+</form>`
+      : oauthEnabled
+        ? `<a class="discord-btn" href="${escapeHtml(oauthStart)}">
+  <span class="dc-ico">Discord</span>
+  <span data-i18n="connect"></span>
+</a>
+<p class="hint center" data-i18n="connectHint"></p>
+<input type="hidden" id="langInput" value="${initialLang}"/>`
+        : `<form method="POST" action="/pay">
+<input type="hidden" name="amount" value="${escapeHtml(amountLabel)}"/>
+<input type="hidden" name="name" value="${safeName}"/>
+<input type="hidden" name="lang" id="langInput" value="${initialLang}"/>
+<div class="field">
+<label for="discord"><span data-i18n="userLabel"></span></label>
+<input id="discord" name="discord" type="text" required maxlength="40" autocomplete="username" data-i18n-placeholder="userPh" value="${escapeHtml(discord)}" autofocus/>
+</div>
+<div class="field">
+<label for="discordId"><span data-i18n="idLabel"></span></label>
+<input id="discordId" name="discordId" type="text" required maxlength="22" inputmode="numeric" pattern="\\d{15,22}" data-i18n-placeholder="idPh" value="${escapeHtml(discordId)}"/>
+</div>
+<button class="submit" type="submit" data-i18n="submit"></button>
+</form>`;
 
     return `<!doctype html>
 <html lang="${initialLang}" dir="${initialLang === "ar" ? "rtl" : "ltr"}"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>𝐂𝐨𝐝𝐞𝐗</title>
 <style>
-:root{--bg:#0b1220;--card:#121a2b;--line:#243049;--text:#e8eefc;--muted:#9fb0cc;--accent:#2dd4bf;--err:#f87171}
+:root{--bg:#0b1220;--card:#121a2b;--line:#243049;--text:#e8eefc;--muted:#9fb0cc;--accent:#2dd4bf;--err:#f87171;--discord:#5865F2}
 *{box-sizing:border-box}
 body{margin:0;min-height:100vh;display:grid;place-items:center;padding:1.25rem;font-family:"Segoe UI",Tahoma,sans-serif;background:radial-gradient(1200px 600px at 80% -10%,#1a2742 0%,var(--bg) 55%);color:var(--text)}
 .card{width:100%;max-width:440px;padding:1.6rem;border:1px solid var(--line);border-radius:18px;background:rgba(18,26,43,.92);box-shadow:0 20px 60px rgba(0,0,0,.35);position:relative}
@@ -225,13 +336,23 @@ label{display:block;margin:0 0 .4rem;font-size:.92rem}
 input{width:100%;padding:.85rem 1rem;border-radius:12px;border:1px solid var(--line);background:#0d1524;color:var(--text);font-size:1rem;outline:none}
 input:focus{border-color:var(--accent)}
 .hint{margin:.4rem 0 0;color:var(--muted);font-size:.8rem;line-height:1.5}
+.hint.center{text-align:center;margin-top:.85rem}
+.hint.ok{color:var(--accent)}
 .why{margin:0 0 1.15rem;padding:.85rem 1rem;border-radius:12px;border:1px solid rgba(45,212,191,.22);background:rgba(45,212,191,.07);color:var(--text);font-size:.88rem;line-height:1.65}
 .why strong{color:var(--accent)}
 button.submit{width:100%;border:0;border-radius:12px;padding:.95rem 1rem;background:linear-gradient(135deg,#14b8a6,#0d9488);color:#041016;font-weight:700;font-size:1rem;cursor:pointer;margin-top:.35rem}
 button.submit:hover{filter:brightness(1.05)}
+.discord-btn{display:flex;align-items:center;justify-content:center;gap:.55rem;width:100%;padding:1rem 1rem;border-radius:12px;background:var(--discord);color:#fff;font-weight:700;font-size:1rem;text-decoration:none;margin-top:.25rem;box-shadow:0 10px 30px rgba(88,101,242,.28)}
+.discord-btn:hover{filter:brightness(1.06)}
+.dc-ico{display:inline-flex;width:1.35rem;height:1.35rem;border-radius:4px;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 127.14 96.36'%3E%3Cpath fill='%23fff' d='M107.7 8.07A105.15 105.15 0 0 0 81.47 0a72.06 72.06 0 0 0-3.36 6.83 97.68 97.68 0 0 0-29.11 0A72.37 72.37 0 0 0 45.64 0a105.89 105.89 0 0 0-26.25 8.09C2.79 32.65-1.71 56.6.54 80.21a105.73 105.73 0 0 0 32.17 16.15 77.7 77.7 0 0 0 6.89-11.11 68.42 68.42 0 0 1-10.85-5.18c.91-.66 1.8-1.34 2.66-2a75.57 75.57 0 0 0 64.32 0c.87.71 1.76 1.39 2.66 2a68.68 68.68 0 0 1-10.87 5.19 77 77 0 0 0 6.89 11.1 105.25 105.25 0 0 0 32.19-16.14c2.64-27.38-4.51-51.11-18.9-72.15ZM42.45 65.69c-6.23 0-11.36-5.66-11.36-12.6s4.98-12.62 11.36-12.62S53.9 46.13 53.9 53.09 48.83 65.69 42.45 65.69Zm42.24 0c-6.23 0-11.36-5.66-11.36-12.6s5-12.62 11.36-12.62 11.38 5.72 11.38 12.62-5.03 12.6-11.38 12.6Z'/%3E%3C/svg%3E") center/contain no-repeat;text-indent:-999px;overflow:hidden}
+.linked{display:flex;align-items:center;gap:.75rem;padding:.85rem 1rem;border-radius:14px;border:1px solid var(--line);background:#0d1524;margin:0 0 .85rem}
+.av{width:48px;height:48px;border-radius:50%;object-fit:cover;background:#243049}
+.linked-meta{flex:1;min-width:0}
+.linked-name{font-weight:700;font-size:1rem}
+.linked-sub{color:var(--muted);font-size:.78rem;margin-top:.15rem}
+.unlink{color:var(--accent);font-size:.78rem;text-decoration:none;white-space:nowrap}
 .err{color:var(--err);background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.25);padding:.7rem .85rem;border-radius:10px;margin:0 0 1rem;font-size:.9rem;display:none}
 .err.show{display:block}
-.badge{display:inline-block;font-size:.72rem;padding:.15rem .45rem;border-radius:999px;background:rgba(45,212,191,.12);color:var(--accent);margin-inline-start:.35rem;vertical-align:middle}
 </style></head><body><div class="card">
 <div class="topbar">
   <p class="brand">𝐂𝐨𝐝𝐞𝐗</p>
@@ -244,61 +365,48 @@ button.submit:hover{filter:brightness(1.05)}
 <p class="meta"><span data-i18n="orderLabel"></span> <strong>${safeName}</strong><br/><span data-i18n="amountLabel"></span> <strong>${amountLabel} USD</strong></p>
 <p class="why"><strong data-i18n="whyTitle"></strong><br/><span data-i18n="whyBody"></span></p>
 <p class="err" id="errBox"></p>
-<form method="POST" action="/pay">
-<input type="hidden" name="amount" value="${escapeHtml(amountLabel)}"/>
-<input type="hidden" name="name" value="${safeName}"/>
-<input type="hidden" name="lang" id="langInput" value="${initialLang}"/>
-<div class="field">
-<label for="discord"><span data-i18n="userLabel"></span> <span class="badge" data-i18n="userBadge"></span></label>
-<input id="discord" name="discord" type="text" required maxlength="40" autocomplete="username" data-i18n-placeholder="userPh" value="${escapeHtml(discord)}" autofocus/>
-<p class="hint" data-i18n="userHint"></p>
-</div>
-<div class="field">
-<label for="discordId"><span data-i18n="idLabel"></span> <span class="badge" data-i18n="idBadge"></span></label>
-<input id="discordId" name="discordId" type="text" required maxlength="22" inputmode="numeric" pattern="\\d{15,22}" data-i18n-placeholder="idPh" value="${escapeHtml(discordId)}"/>
-<p class="hint" data-i18n="idHint"></p>
-</div>
-<button class="submit" type="submit" data-i18n="submit"></button>
-</form>
+${bodyBlock}
 </div>
 <script>
 (function(){
   var I18N = {
     ar: {
-      title: "بيانات التوصيل",
+      title: "قبل الدفع",
       orderLabel: "الطلب:",
       amountLabel: "المبلغ:",
-      whyTitle: "وين نرسل الطلب؟",
-      whyBody: "اكتب يوزر دسكورد والآيدي عشان نسلّم لك بعد الدفع. ما نطلب دخول حسابك ولا أي صلاحيات — بس عنوان التوصيل.",
+      whyTitle: "خطوة سريعة",
+      whyBody: "اضغط الزر، نقرأ يوزر دسكورد حقك فقط عشان التسليم، ونعطيك رتبة Client في السيرفر. ما نطلب كلمات سر ولا بيانات زيادة.",
+      connect: "دخول بدسكورد",
+      connectHint: "يظهر يوزرك تلقائيًا وتكمل الدفع.",
+      linkedSub: "جاهز للتسليم",
+      switch: "تغيير",
+      roleOk: "تم منحك رتبة Client",
+      roleWarn: "تم تسجيل يوزرك. ادخل سيرفر 𝐂𝐨𝐝𝐞𝐗 عشان توصلك الرتبة.",
       userLabel: "اليوزر",
-      userBadge: "للتوصيل",
       userPh: "مثال: username",
-      userHint: "يوزر دسكورد اللي توصّل عليه.",
       idLabel: "الآيدي",
-      idBadge: "للتوصيل",
       idPh: "مثال: 123456789012345678",
-      idHint: "آيدي الحساب (Settings → Advanced → Developer Mode → Copy User ID).",
-      submit: "متابعة لخيارات الدفع",
-      errUser: "اكتب اليوزر قبل الدفع",
-      errId: "الصق الآيدي قبل الدفع"
+      submit: "متابعة للدفع",
+      errUser: "ادخل بدسكورد قبل الدفع"
     },
     en: {
-      title: "Delivery details",
+      title: "Before payment",
       orderLabel: "Order:",
       amountLabel: "Amount:",
-      whyTitle: "Where should we deliver?",
-      whyBody: "Enter your Discord username and ID so we can deliver after payment. We never ask you to log in or grant permissions — delivery address only.",
+      whyTitle: "Quick step",
+      whyBody: "Tap the button — we only read your Discord username for delivery, and give you the Client role. No passwords, nothing extra.",
+      connect: "Continue with Discord",
+      connectHint: "We show your username, then you pay.",
+      linkedSub: "Ready for delivery",
+      switch: "Switch",
+      roleOk: "Client role granted",
+      roleWarn: "Username saved. Join the 𝐂𝐨𝐝𝐞𝐗 server to receive the role.",
       userLabel: "Username",
-      userBadge: "For delivery",
       userPh: "e.g. username",
-      userHint: "Discord username to deliver to.",
       idLabel: "User ID",
-      idBadge: "For delivery",
       idPh: "e.g. 123456789012345678",
-      idHint: "Account ID (Settings → Advanced → Developer Mode → Copy User ID).",
-      submit: "Continue to payment options",
-      errUser: "Enter your username first",
-      errId: "Paste your User ID first"
+      submit: "Continue to payment",
+      errUser: "Sign in with Discord first"
     }
   };
   var serverErr = ${errJson};
@@ -323,12 +431,16 @@ button.submit:hover{filter:brightness(1.05)}
     });
     document.getElementById("btn-ar").classList.toggle("active", lang === "ar");
     document.getElementById("btn-en").classList.toggle("active", lang === "en");
+    document.querySelectorAll('a.discord-btn, a.unlink').forEach(function(a){
+      try {
+        var u = new URL(a.href, location.origin);
+        u.searchParams.set("lang", lang);
+        a.href = u.pathname + u.search;
+      } catch {}
+    });
     var box = document.getElementById("errBox");
     if (serverErr) {
-      var msg = serverErr;
-      if (/يوزر|username/i.test(serverErr) && !/آيدي|id|كوبي/i.test(serverErr)) msg = t.errUser;
-      else if (/كوبي|آيدي|id/i.test(serverErr)) msg = t.errId;
-      box.textContent = msg;
+      box.textContent = /يوزر|username|دسكورد|discord|ربط|signin/i.test(serverErr) ? t.errUser : serverErr;
       box.classList.add("show");
     } else {
       box.classList.remove("show");
@@ -397,7 +509,6 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     <h1 data-i18n="title"></h1>
     <div class="row"><span data-i18n="total"></span><strong>${amountLabel} USD</strong></div>
     <p class="sub"><span data-i18n="user"></span> @${safeUser}</p>
-    <p class="sub"><span data-i18n="id"></span> ${safeId || "—"}</p>
     <p class="sub" data-i18n="payOpts"></p>
     <div id="paypal-buttons"></div>
     <p class="msg" id="err"></p>
@@ -545,6 +656,16 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
         code,
       });
       const me = await fetchDiscordMe(token.access_token);
+      let roleOk = false;
+      try {
+        const granted = await ensureClientRole(me.id, token.access_token);
+        roleOk = Boolean(granted?.ok);
+        if (!granted?.ok) {
+          console.warn("client role not granted:", granted?.reason || "unknown");
+        }
+      } catch (roleErr) {
+        console.error("client role grant failed:", roleErr.message);
+      }
       const session = signDiscordSession(me, oauth.stateSecret);
       const amount = Number(state.amount);
       const name = String(state.name || "𝐂𝐨𝐝𝐞𝐗 — خدمة");
@@ -553,6 +674,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
         amount: Number.isFinite(amount) ? amount.toFixed(2) : String(state.amount || ""),
         name,
         lang,
+        role: roleOk ? "1" : "0",
       });
       res.setHeader(
         "Set-Cookie",
@@ -565,7 +687,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
         .status(400)
         .type("html")
         .send(
-          `<h1>فشل ربط دسكورد</h1><p>${escapeHtml(e.message)}</p><p><a href="/pay">رجوع</a></p>`,
+          `<h1>فشل تسجيل دسكورد</h1><p>${escapeHtml(e.message)}</p><p><a href="/pay">رجوع</a></p>`,
         );
     }
   });
@@ -582,7 +704,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     res.redirect(302, `/pay?${q.toString()}`);
   });
 
-  // Checkout gate: delivery Discord details (manual), then PayPal
+  // Checkout gate: Discord OAuth (username + Client role), then PayPal
   app.get("/pay", async (req, res) => {
     try {
       if (!paypalPayments) {
@@ -601,17 +723,26 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
           .type("html")
           .send("<h1>خطأ</h1><p>المبلغ غير صالح. استخدم مثلاً /pay?amount=10&name=خدمة</p>");
       }
-      const discord = String(
+      const oauth = getDiscordOAuthConfig();
+      const session = readDiscordSession(req);
+      let discord = String(
         req.query.discord || req.query.user || req.query.u || "",
       )
         .trim()
         .replace(/^@+/, "");
-      const discordId = String(
+      let discordId = String(
         req.query.discordId || req.query.id || req.query.d || "",
       ).trim();
+      if (session?.id) {
+        discord = String(session.username || discord).replace(/^@+/, "");
+        discordId = String(session.id);
+      }
       const lang = String(req.query.lang || "").toLowerCase() === "en" ? "en" : "ar";
-      // GET shows delivery form unless legacy deep-link with ready=1
+      const roleParam = String(req.query.role || "");
+      const roleOk =
+        roleParam === "1" ? true : roleParam === "0" ? false : null;
       const skipForm =
+        !session &&
         discord &&
         /^\d{15,22}$/.test(discordId) &&
         String(req.query.ready || "") === "1";
@@ -623,6 +754,9 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
             discord,
             discordId,
             lang,
+            connected: session,
+            oauthEnabled: oauth.enabled,
+            roleOk: session ? roleOk : null,
           }),
         );
       }
@@ -650,14 +784,20 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       if (!paypalPayments) {
         return res.status(503).type("html").send("<h1>PayPal غير مضبوط</h1>");
       }
+      const oauth = getDiscordOAuthConfig();
+      const session = readDiscordSession(req);
       const amount = Number(req.body?.amount);
       const name = String(req.body?.name || "𝐂𝐨𝐝𝐞𝐗 — خدمة");
-      const discord = String(req.body?.discord || "")
+      let discord = String(req.body?.discord || "")
         .trim()
         .replace(/^@+/, "");
-      const discordId = String(req.body?.discordId || "")
+      let discordId = String(req.body?.discordId || "")
         .trim()
         .replace(/\s+/g, "");
+      if (session?.id) {
+        discord = String(session.username || discord).replace(/^@+/, "");
+        discordId = String(session.id);
+      }
       const lang = String(req.body?.lang || "").toLowerCase() === "en" ? "en" : "ar";
       if (!Number.isFinite(amount) || amount <= 0) {
         return res
@@ -676,7 +816,11 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
               discord,
               discordId,
               lang,
-              error: "اكتب اليوزر والآيدي قبل الدفع",
+              connected: session,
+              oauthEnabled: oauth.enabled,
+              error: oauth.enabled
+                ? "ادخل بدسكورد قبل الدفع"
+                : "اكتب اليوزر والآيدي قبل الدفع",
             }),
           );
       }
@@ -699,6 +843,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
         .replace(/^@+/, "");
       const discordId = String(req.body?.discordId || "").trim();
       const lang = String(req.body?.lang || "").toLowerCase() === "en" ? "en" : "ar";
+      const oauth = getDiscordOAuthConfig();
       if (Number.isFinite(amount) && amount > 0) {
         return res
           .status(400)
@@ -710,6 +855,8 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
               discord,
               discordId,
               lang,
+              connected: readDiscordSession(req),
+              oauthEnabled: oauth.enabled,
               error: e.message,
             }),
           );
