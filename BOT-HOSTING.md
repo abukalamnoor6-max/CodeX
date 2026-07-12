@@ -73,6 +73,24 @@ PAYPAL_NOTIFY_CHANNEL_ID=1524971495921684601
 
 بعد الدفع الناجح يرسل البوت فاتورة في قناة `PAYPAL_NOTIFY_CHANNEL_ID`.
 
+## Discord OAuth (زر ربط دسكورد قبل الدفع)
+
+بدل ما العميل ينسخ اليوزر/الآيدي يدوي:
+
+1) https://discord.com/developers/applications → تطبيق البوت
+2) **OAuth2** → انسخ **Client ID** و **Client Secret**
+3) Redirects أضف:
+   `https://YOUR-SERVICE.up.railway.app/auth/discord/callback`
+4) Railway Variables:
+
+```
+DISCORD_CLIENT_ID=...
+DISCORD_CLIENT_SECRET=...
+PUBLIC_BASE_URL=https://YOUR-SERVICE.up.railway.app
+```
+
+(إذا `DISCORD_CLIENT_ID` فاضي، البوت يحاول يأخذه من توكن البوت تلقائيًا.)
+
 ## ملاحظة
 لا تشغّل البوت على Vercel — يحتاج عملية 24/7.
 لا تشغّل نفس التوكن محلياً وRailway معاً.
