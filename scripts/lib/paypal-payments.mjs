@@ -56,6 +56,7 @@ export function createPayPalPayments({
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
         Accept: "application/json",
+        Prefer: "return=representation",
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
@@ -67,13 +68,19 @@ export function createPayPalPayments({
       data = { raw: text };
     }
     if (!res.ok) {
-      const msg =
-        data?.message ||
+      const detail =
         data?.details?.[0]?.description ||
+        data?.details?.[0]?.issue ||
+        data?.message ||
         data?.error_description ||
         data?.name ||
         `PayPal HTTP ${res.status}`;
-      throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+      const issue = data?.details?.[0]?.issue || data?.name || "";
+      const err = new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+      err.issue = issue;
+      err.status = res.status;
+      err.paypal = data;
+      throw err;
     }
     return data;
   }
@@ -132,12 +139,19 @@ export function createPayPalPayments({
       discordUser: user,
       productName: metadata.productName || productName,
     });
+    // PayPal description is picky with some unicode — keep a safe short label
+    const safeDescription =
+      String(productName)
+        .replace(/[^\w\s\-_.\u0600-\u06FF]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 120) || "codeX service";
 
     const order = await api("POST", "/v2/checkout/orders", {
       intent: "CAPTURE",
       purchase_units: [
         {
-          description: productName,
+          description: safeDescription,
           custom_id: customId,
           amount: {
             currency_code: currencyCode,
@@ -147,8 +161,6 @@ export function createPayPalPayments({
       ],
       application_context: {
         brand_name: "codeX",
-        locale: "ar-SA",
-        landing_page: "NO_PREFERENCE",
         shipping_preference: "NO_SHIPPING",
         user_action: "PAY_NOW",
         return_url: `${base}/pay/success`,
@@ -156,22 +168,44 @@ export function createPayPalPayments({
       },
     });
 
-    const approveUrl =
-      order?.links?.find((l) => l.rel === "approve")?.href || null;
-    if (!approveUrl) {
-      throw new Error("PayPal did not return an approve URL");
-    }
-
     return {
       id: order.id,
       status: order.status,
-      url: approveUrl,
+      url: order?.links?.find((l) => l.rel === "approve")?.href || null,
       order,
     };
   }
 
+  async function getOrder(orderId) {
+    return api("GET", `/v2/checkout/orders/${orderId}`);
+  }
+
   async function captureOrder(orderId) {
-    return api("POST", `/v2/checkout/orders/${orderId}/capture`, {});
+    try {
+      return await api("POST", `/v2/checkout/orders/${orderId}/capture`, {});
+    } catch (e) {
+      const issue = String(e.issue || e.message || "");
+      // Idempotent: already captured / completed is success for checkout UX
+      if (
+        /ORDER_ALREADY_CAPTURED|CAPTURE_ALREADY|ORDER_NOT_APPROVED/i.test(issue) ||
+        /already been captured|already captured/i.test(String(e.message || ""))
+      ) {
+        const existing = await getOrder(orderId).catch(() => null);
+        if (existing) return existing;
+      }
+      // If capture raced with webhook, order may already be COMPLETED
+      const existing = await getOrder(orderId).catch(() => null);
+      if (
+        existing &&
+        (existing.status === "COMPLETED" ||
+          existing.purchase_units?.some((u) =>
+            u.payments?.captures?.some((c) => c.status === "COMPLETED"),
+          ))
+      ) {
+        return existing;
+      }
+      throw e;
+    }
   }
 
   async function verifyWebhook({ headers, body }) {
@@ -229,6 +263,7 @@ export function createPayPalPayments({
     apiBase,
     createOrder,
     captureOrder,
+    getOrder,
     verifyWebhook,
     parseCaptureResource,
     decodeCustomId,

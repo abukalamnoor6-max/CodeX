@@ -513,6 +513,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
             .setTimestamp(),
         ],
       });
+      await sendOfficialDivider(reviewsCh).catch((e) =>
+        console.warn("divider after review failed", e.message),
+      );
     } catch (e) {
       console.warn("reviews post failed", e.message);
     }

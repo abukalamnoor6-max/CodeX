@@ -131,8 +131,14 @@ export function createPanelApp({
         return res.status(400).json({ ok: false, error: "orderID required" });
       }
       const capture = await paypalPayments.captureOrder(orderId);
-      res.json({ ok: true, status: capture?.status || "COMPLETED", id: capture?.id || orderId });
+      const status = capture?.status || "COMPLETED";
+      res.json({
+        ok: true,
+        status,
+        id: capture?.id || orderId,
+      });
     } catch (e) {
+      console.error("paypal capture failed:", e.message, e.issue || "");
       res.status(400).json({ ok: false, error: e.message });
     }
   });
@@ -232,8 +238,6 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     <p class="sub">دسكورد: @${safeUser}</p>
     <p class="sub">خيارات الدفع الإلكتروني السريع</p>
     <div id="paypal-buttons"></div>
-    <div class="sep">أو الدفع بالبطاقة</div>
-    <div id="card-button"></div>
     <p class="msg" id="err"></p>
   </div>
   <p class="foot">مدعوم من PayPal · codeX</p>
@@ -258,21 +262,23 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ orderID: data.orderID })
-    }).then(function(r){ return r.json().then(function(j){ if(!r.ok||!j.ok) throw new Error(j.error||'تعذر تأكيد الدفع'); window.location='/pay/success'; }); });
+    }).then(function(r){ return r.json().then(function(j){
+      if(j && (j.ok || j.status === 'COMPLETED')) { window.location='/pay/success'; return; }
+      if(!r.ok) throw new Error(j.error||'تعذر تأكيد الدفع');
+      window.location='/pay/success';
+    }); });
   }
   function onError(e){ showErr((e&&e.message)||'حدث خطأ أثناء الدفع'); }
+  function onCancel(){ showErr('تم إلغاء الدفع'); }
 
-  var style = { layout:'vertical', color:'gold', shape:'rect', label:'paypal', height:48 };
   if (paypal.Buttons) {
-    paypal.Buttons({ style: style, createOrder: createOrder, onApprove: onApprove, onError: onError }).render('#paypal-buttons');
-    var cardBtn = paypal.Buttons({
-      fundingSource: paypal.FUNDING.CARD,
-      style: { layout:'vertical', color:'black', shape:'rect', label:'pay', height:48 },
+    paypal.Buttons({
+      style: { layout:'vertical', color:'gold', shape:'rect', label:'paypal', height:48 },
       createOrder: createOrder,
       onApprove: onApprove,
-      onError: onError
-    });
-    if (cardBtn.isEligible()) cardBtn.render('#card-button');
+      onError: onError,
+      onCancel: onCancel
+    }).render('#paypal-buttons');
   }
 })();
 </script>
