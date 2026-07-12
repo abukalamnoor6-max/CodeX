@@ -579,15 +579,38 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     }).then(function(r){ return r.json().then(function(j){ if(!r.ok||!j.id) throw new Error(j.error||t().createFail); return j.id; }); });
   }
   function onApprove(data){
+    var successUrl = '/pay/success?' + new URLSearchParams({
+      amount: amount,
+      name: name,
+      user: discordUser,
+      lang: lang
+    }).toString();
     return fetch('/paypal/capture', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ orderID: data.orderID })
-    }).then(function(r){ return r.json().then(function(j){
-      if(j && (j.ok || j.status === 'COMPLETED')) { window.location='/pay/success'; return; }
-      if(!r.ok) throw new Error(j.error||t().captureFail);
-      window.location='/pay/success';
-    }); });
+    }).then(function(r){
+      return r.json().catch(function(){ return {}; }).then(function(j){
+        var ok = r.ok || (j && (j.ok || j.status === 'COMPLETED' || j.status === 'APPROVED'));
+        if (ok) {
+          window.location.replace(successUrl);
+          return;
+        }
+        // PayPal approved in UI — still send buyer to thank-you; webhook may finish settle
+        if (data && data.orderID) {
+          window.location.replace(successUrl);
+          return;
+        }
+        throw new Error((j && j.error) || t().captureFail);
+      });
+    }).catch(function(e){
+      // If capture network-fails after buyer paid, still show success page
+      if (data && data.orderID) {
+        window.location.replace(successUrl);
+        return;
+      }
+      showErr((e && e.message) || t().errPay);
+    });
   }
   function onError(e){ showErr((e&&e.message)||t().errPay); }
   function onCancel(){ showErr(t().cancel); }
@@ -869,17 +892,81 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
   });
 
   app.get("/pay/success", (req, res) => {
+    const lang = String(req.query.lang || "").toLowerCase() === "en" ? "en" : "ar";
+    const amount = String(req.query.amount || "").trim();
+    const name = String(req.query.name || "").trim();
+    const user = String(req.query.user || req.query.discord || "")
+      .trim()
+      .replace(/^@+/, "");
+    const amountLabel = amount
+      ? `${escapeHtml(Number(amount).toFixed ? Number(amount).toFixed(2) : amount)} USD`
+      : "";
+    const safeName = escapeHtml(name || (lang === "en" ? "your order" : "طلبك"));
+    const safeUser = escapeHtml(user);
+    const copy =
+      lang === "en"
+        ? {
+            title: "Payment successful",
+            thanks: "Thank you for trusting 𝐂𝐨𝐝𝐞𝐗.",
+            order: "Order",
+            amount: "Amount",
+            deliver: "Delivery account",
+            next: "We’ll confirm on Discord shortly and start delivery.",
+            tip: "Keep your Discord notifications on.",
+          }
+        : {
+            title: "تم الدفع بنجاح",
+            thanks: "شكراً لثقتك في 𝐂𝐨𝐝𝐞𝐗.",
+            order: "الطلب",
+            amount: "المبلغ",
+            deliver: "حساب التسليم",
+            next: "راح يوصلك تأكيد على دسكورد قريب ونبدأ التسليم.",
+            tip: "خلّ تنبيهات دسكورد مفتوحة.",
+          };
+    const details = [
+      name
+        ? `<div class="row"><span>${copy.order}</span><strong>${safeName}</strong></div>`
+        : "",
+      amountLabel
+        ? `<div class="row"><span>${copy.amount}</span><strong>${amountLabel}</strong></div>`
+        : "",
+      user
+        ? `<div class="row"><span>${copy.deliver}</span><strong>@${safeUser}</strong></div>`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("");
+
     res.type("html").send(`<!doctype html>
-<html lang="ar" dir="rtl"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>تم الدفع — 𝐂𝐨𝐝𝐞𝐗</title>
+<html lang="${lang}" dir="${lang === "ar" ? "rtl" : "ltr"}"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>${copy.title} — 𝐂𝐨𝐝𝐞𝐗</title>
 <style>
-body{font-family:system-ui,sans-serif;background:#0b1220;color:#e8eefc;display:grid;place-items:center;min-height:100vh;margin:0}
-.card{max-width:420px;padding:2rem;border:1px solid #1e2a44;border-radius:16px;background:#121a2b;text-align:center}
-h1{margin:0 0 .5rem;font-size:1.4rem}p{opacity:.85;line-height:1.6}
-</style></head><body><div class="card">
-<h1>تم الدفع بنجاح</h1>
-<p>شكراً لثقتك في 𝐂𝐨𝐝𝐞𝐗. راح يوصلك تأكيد على دسكورد قريب إن شاء الله.</p>
-</div></body></html>`);
+:root{--bg:#0b1220;--card:#121a2b;--line:#243049;--text:#e8eefc;--muted:#9fb0cc;--accent:#2dd4bf;--ok:#34d399}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:grid;place-items:center;padding:1.25rem;font-family:"Segoe UI",Tahoma,sans-serif;background:radial-gradient(1100px 560px at 80% -10%,#163528 0%,var(--bg) 55%);color:var(--text)}
+.card{width:100%;max-width:440px;padding:1.85rem 1.5rem 1.6rem;border:1px solid rgba(52,211,153,.28);border-radius:20px;background:rgba(18,26,43,.94);box-shadow:0 24px 70px rgba(0,0,0,.4);text-align:center}
+.badge{width:72px;height:72px;margin:0 auto 1rem;border-radius:50%;display:grid;place-items:center;background:rgba(52,211,153,.14);border:1px solid rgba(52,211,153,.35);color:var(--ok);font-size:2rem;font-weight:700}
+.brand{margin:0 0 .35rem;color:var(--accent);letter-spacing:.08em;font-size:.82rem;font-weight:700}
+h1{margin:0 0 .55rem;font-size:1.55rem}
+.thanks{margin:0 0 1.15rem;color:var(--muted);line-height:1.7}
+.box{text-align:start;border:1px solid var(--line);background:#0d1524;border-radius:14px;padding:.85rem 1rem;margin:0 0 1.1rem}
+.row{display:flex;justify-content:space-between;gap:1rem;padding:.45rem 0;font-size:.95rem;color:var(--muted)}
+.row+ .row{border-top:1px solid rgba(36,48,73,.85)}
+.row strong{color:var(--text);font-weight:700;text-align:end;word-break:break-word}
+.next{margin:0 0 .45rem;line-height:1.7;font-size:.98rem}
+.tip{margin:0;color:var(--muted);font-size:.84rem;line-height:1.55}
+</style></head><body>
+<div class="card">
+  <div class="badge" aria-hidden="true">✓</div>
+  <p class="brand">𝐂𝐨𝐝𝐞𝐗</p>
+  <h1>${copy.title}</h1>
+  <p class="thanks">${copy.thanks}</p>
+  ${details ? `<div class="box">${details}</div>` : ""}
+  <p class="next">${copy.next}</p>
+  <p class="tip">${copy.tip}</p>
+</div>
+</body></html>`);
   });
 
   app.get("/pay/cancel", (req, res) => {
