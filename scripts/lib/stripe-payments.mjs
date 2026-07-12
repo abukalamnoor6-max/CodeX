@@ -39,7 +39,7 @@ export function createStripePayments({
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      locale: "ar",
+      locale: "auto",
       customer_email: customerEmail || undefined,
       line_items: [
         {
