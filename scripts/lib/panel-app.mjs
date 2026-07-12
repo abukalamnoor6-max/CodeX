@@ -157,22 +157,32 @@ export function createPanelApp({
     process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ||
     "";
 
-  function payFormPage({ amount, name, error = "", discord = "", discordId = "" }) {
+  function payFormPage({
+    amount,
+    name,
+    error = "",
+    discord = "",
+    discordId = "",
+    lang = "ar",
+  }) {
     const amountLabel = Number(amount).toFixed(2);
     const safeName = escapeHtml(name);
-    const errBlock = error
-      ? `<p class="err">${escapeHtml(error)}</p>`
-      : "";
+    const initialLang = lang === "en" ? "en" : "ar";
+    const errJson = JSON.stringify(error || "");
     return `<!doctype html>
-<html lang="ar" dir="rtl"><head><meta charset="utf-8"/>
+<html lang="${initialLang}" dir="${initialLang === "ar" ? "rtl" : "ltr"}"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>إتمام الطلب — 𝐂𝐨𝐝𝐞𝐗</title>
+<title>𝐂𝐨𝐝𝐞𝐗</title>
 <style>
 :root{--bg:#0b1220;--card:#121a2b;--line:#243049;--text:#e8eefc;--muted:#9fb0cc;--accent:#2dd4bf;--err:#f87171}
 *{box-sizing:border-box}
 body{margin:0;min-height:100vh;display:grid;place-items:center;padding:1.25rem;font-family:"Segoe UI",Tahoma,sans-serif;background:radial-gradient(1200px 600px at 80% -10%,#1a2742 0%,var(--bg) 55%);color:var(--text)}
-.card{width:100%;max-width:440px;padding:1.6rem;border:1px solid var(--line);border-radius:18px;background:rgba(18,26,43,.92);box-shadow:0 20px 60px rgba(0,0,0,.35)}
-.brand{font-size:.85rem;letter-spacing:.08em;color:var(--accent);margin:0 0 .35rem;font-weight:700}
+.card{width:100%;max-width:440px;padding:1.6rem;border:1px solid var(--line);border-radius:18px;background:rgba(18,26,43,.92);box-shadow:0 20px 60px rgba(0,0,0,.35);position:relative}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin:0 0 .85rem;direction:ltr}
+.brand{font-size:.85rem;letter-spacing:.08em;color:var(--accent);margin:0;font-weight:700}
+.langs{display:flex;gap:.35rem;background:#0d1524;border:1px solid var(--line);border-radius:999px;padding:.2rem;margin-left:auto}
+.langs button{width:auto;margin:0;padding:.35rem .7rem;border-radius:999px;background:transparent;color:var(--muted);font-weight:600;font-size:.78rem;border:0;cursor:pointer}
+.langs button.active{background:rgba(45,212,191,.18);color:var(--accent)}
 h1{margin:0 0 .75rem;font-size:1.35rem}
 .meta{margin:0 0 1.1rem;color:var(--muted);line-height:1.7;font-size:.95rem}
 .meta strong{color:var(--text)}
@@ -183,53 +193,152 @@ input:focus{border-color:var(--accent)}
 .hint{margin:.4rem 0 0;color:var(--muted);font-size:.8rem;line-height:1.5}
 .why{margin:0 0 1.15rem;padding:.85rem 1rem;border-radius:12px;border:1px solid rgba(45,212,191,.22);background:rgba(45,212,191,.07);color:var(--text);font-size:.88rem;line-height:1.65}
 .why strong{color:var(--accent)}
-button{width:100%;border:0;border-radius:12px;padding:.95rem 1rem;background:linear-gradient(135deg,#14b8a6,#0d9488);color:#041016;font-weight:700;font-size:1rem;cursor:pointer;margin-top:.35rem}
-button:hover{filter:brightness(1.05)}
-.err{color:var(--err);background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.25);padding:.7rem .85rem;border-radius:10px;margin:0 0 1rem;font-size:.9rem}
+button.submit{width:100%;border:0;border-radius:12px;padding:.95rem 1rem;background:linear-gradient(135deg,#14b8a6,#0d9488);color:#041016;font-weight:700;font-size:1rem;cursor:pointer;margin-top:.35rem}
+button.submit:hover{filter:brightness(1.05)}
+.err{color:var(--err);background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.25);padding:.7rem .85rem;border-radius:10px;margin:0 0 1rem;font-size:.9rem;display:none}
+.err.show{display:block}
 .badge{display:inline-block;font-size:.72rem;padding:.15rem .45rem;border-radius:999px;background:rgba(45,212,191,.12);color:var(--accent);margin-inline-start:.35rem;vertical-align:middle}
 </style></head><body><div class="card">
-<p class="brand">𝐂𝐨𝐝𝐞𝐗</p>
-<h1>قبل الدفع</h1>
-<p class="meta">الطلب: <strong>${safeName}</strong><br/>المبلغ: <strong>${amountLabel} USD</strong></p>
-<p class="why"><strong>ليش نطلب البيانات؟</strong><br/>عشان نتأكد من <strong>العميل اللي اشترى</strong> بالضبط، ونربط الدفع بحسابك في دسكورد، ونسلّم الطلب لنفس الشخص بدون لخبطة أو تأخير.</p>
-${errBlock}
+<div class="topbar">
+  <p class="brand">𝐂𝐨𝐝𝐞𝐗</p>
+  <div class="langs" role="group" aria-label="Language">
+    <button type="button" data-lang="ar" id="btn-ar">عربي</button>
+    <button type="button" data-lang="en" id="btn-en">English</button>
+  </div>
+</div>
+<h1 data-i18n="title"></h1>
+<p class="meta"><span data-i18n="orderLabel"></span> <strong>${safeName}</strong><br/><span data-i18n="amountLabel"></span> <strong>${amountLabel} USD</strong></p>
+<p class="why"><strong data-i18n="whyTitle"></strong><br/><span data-i18n="whyBody"></span></p>
+<p class="err" id="errBox"></p>
 <form method="POST" action="/pay">
 <input type="hidden" name="amount" value="${escapeHtml(amountLabel)}"/>
 <input type="hidden" name="name" value="${safeName}"/>
+<input type="hidden" name="lang" id="langInput" value="${initialLang}"/>
 <div class="field">
-<label for="discord">اليوزر <span class="badge">اسم الحساب</span></label>
-<input id="discord" name="discord" type="text" required maxlength="40" autocomplete="username" placeholder="مثال: username" value="${escapeHtml(discord)}" autofocus/>
-<p class="hint">يوزر دسكورد الحالي (مو الديسپلاي نيم القديمًا) — عشان نعرف مين العميل اللي دفع.</p>
+<label for="discord"><span data-i18n="userLabel"></span> <span class="badge" data-i18n="userBadge"></span></label>
+<input id="discord" name="discord" type="text" required maxlength="40" autocomplete="username" data-i18n-placeholder="userPh" value="${escapeHtml(discord)}" autofocus/>
+<p class="hint" data-i18n="userHint"></p>
 </div>
 <div class="field">
-<label for="discordId">كوبي يوزر <span class="badge">آيدي الحساب</span></label>
-<input id="discordId" name="discordId" type="text" required maxlength="22" inputmode="numeric" pattern="\\d{15,22}" placeholder="مثال: 123456789012345678" value="${escapeHtml(discordId)}"/>
-<p class="hint">للتأكيد النهائي على حسابك وتسليم الطلب لك مباشرة. من دسكورد: الإعدادات ← متقدم ← وضع المطوّر ← يمين على حسابك ← نسخ معرّف المستخدم.</p>
+<label for="discordId"><span data-i18n="idLabel"></span> <span class="badge" data-i18n="idBadge"></span></label>
+<input id="discordId" name="discordId" type="text" required maxlength="22" inputmode="numeric" pattern="\\d{15,22}" data-i18n-placeholder="idPh" value="${escapeHtml(discordId)}"/>
+<p class="hint" data-i18n="idHint"></p>
 </div>
-<button type="submit">متابعة لخيارات الدفع</button>
+<button class="submit" type="submit" data-i18n="submit"></button>
 </form>
-</div></body></html>`;
+</div>
+<script>
+(function(){
+  var I18N = {
+    ar: {
+      title: "قبل الدفع",
+      orderLabel: "الطلب:",
+      amountLabel: "المبلغ:",
+      whyTitle: "ليش نطلب البيانات؟",
+      whyBody: "عشان نتأكد من العميل اللي اشترى بالضبط، ونربط الدفع بحسابك في دسكورد، ونسلّم الطلب لنفس الشخص بدون لخبطة أو تأخير.",
+      userLabel: "اليوزر",
+      userBadge: "اسم الحساب",
+      userPh: "مثال: username",
+      userHint: "يوزر دسكورد الحالي (مو الديسپلاي نيم القديمًا) — عشان نعرف مين العميل اللي دفع.",
+      idLabel: "كوبي يوزر",
+      idBadge: "آيدي الحساب",
+      idPh: "مثال: 123456789012345678",
+      idHint: "للتأكيد النهائي على حسابك وتسليم الطلب لك مباشرة. من دسكورد: الإعدادات ← متقدم ← وضع المطوّر ← يمين على حسابك ← نسخ معرّف المستخدم.",
+      submit: "متابعة لخيارات الدفع",
+      errUser: "اكتب اليوزر قبل الدفع",
+      errId: "الصق كوبي يوزر (آيدي الحساب) — أرقام فقط من دسكورد"
+    },
+    en: {
+      title: "Before payment",
+      orderLabel: "Order:",
+      amountLabel: "Amount:",
+      whyTitle: "Why do we ask for this?",
+      whyBody: "So we can verify the exact customer who purchased, link the payment to your Discord account, and deliver the order to the same person — no mix-ups or delays.",
+      userLabel: "Username",
+      userBadge: "Account name",
+      userPh: "e.g. username",
+      userHint: "Your current Discord username (not the old display name) — so we know who paid.",
+      idLabel: "Copy User ID",
+      idBadge: "Account ID",
+      idPh: "e.g. 123456789012345678",
+      idHint: "Confirms your account so we can deliver directly to you. Discord: Settings → Advanced → Developer Mode → right-click your profile → Copy User ID.",
+      submit: "Continue to payment options",
+      errUser: "Enter your Discord username before paying",
+      errId: "Paste your Copy User ID (numbers only from Discord)"
+    }
+  };
+  var serverErr = ${errJson};
+  var lang = localStorage.getItem("codex_pay_lang") || ${JSON.stringify(initialLang)};
+  if (lang !== "en" && lang !== "ar") lang = "ar";
+
+  function apply(langKey) {
+    lang = langKey;
+    localStorage.setItem("codex_pay_lang", lang);
+    var t = I18N[lang];
+    document.documentElement.lang = lang;
+    document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
+    document.getElementById("langInput").value = lang;
+    document.querySelectorAll("[data-i18n]").forEach(function(el){
+      var k = el.getAttribute("data-i18n");
+      if (t[k] != null) el.textContent = t[k];
+    });
+    document.querySelectorAll("[data-i18n-placeholder]").forEach(function(el){
+      var k = el.getAttribute("data-i18n-placeholder");
+      if (t[k] != null) el.placeholder = t[k];
+    });
+    document.getElementById("btn-ar").classList.toggle("active", lang === "ar");
+    document.getElementById("btn-en").classList.toggle("active", lang === "en");
+    var box = document.getElementById("errBox");
+    if (serverErr) {
+      var msg = serverErr;
+      if (/يوزر|username/i.test(serverErr) && !/آيدي|id|كوبي/i.test(serverErr)) msg = t.errUser;
+      else if (/كوبي|آيدي|id/i.test(serverErr)) msg = t.errId;
+      box.textContent = msg;
+      box.classList.add("show");
+    } else {
+      box.classList.remove("show");
+      box.textContent = "";
+    }
   }
 
-  function payCheckoutPage({ amount, name, discordUser, discordId = "" }) {
+  document.getElementById("btn-ar").addEventListener("click", function(){ apply("ar"); });
+  document.getElementById("btn-en").addEventListener("click", function(){ apply("en"); });
+  apply(lang);
+})();
+</script>
+</body></html>`;
+  }
+
+  function payCheckoutPage({
+    amount,
+    name,
+    discordUser,
+    discordId = "",
+    lang = "ar",
+  }) {
     const amountLabel = Number(amount).toFixed(2);
     const safeName = escapeHtml(name);
     const safeUser = escapeHtml(String(discordUser || "").replace(/^@+/, ""));
     const safeId = escapeHtml(String(discordId || ""));
     const clientId = escapeHtml(paypalClientId);
+    const initialLang = lang === "en" ? "en" : "ar";
     if (!paypalClientId) {
-      return `<h1>PayPal Client ID ناقص</h1>`;
+      return `<h1>PayPal Client ID missing</h1>`;
     }
     return `<!doctype html>
-<html lang="ar" dir="rtl"><head><meta charset="utf-8"/>
+<html lang="${initialLang}" dir="${initialLang === "ar" ? "rtl" : "ltr"}"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>الدفع — 𝐂𝐨𝐝𝐞𝐗</title>
+<title>𝐂𝐨𝐝𝐞𝐗</title>
 <style>
 *{box-sizing:border-box}
 body{margin:0;min-height:100vh;background:#f5f5f5;color:#111;font-family:"Segoe UI",Tahoma,sans-serif;display:grid;place-items:center;padding:1.25rem}
 .wrap{width:100%;max-width:420px}
-.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:.85rem;font-size:.95rem}
+.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:.85rem;gap:.75rem;direction:ltr}
+.top{display:flex;justify-content:space-between;align-items:center;font-size:.95rem;flex:1;gap:.5rem}
 .top .name{font-weight:600}
+.langs{display:flex;gap:.3rem;background:#eee;border-radius:999px;padding:.18rem;margin-left:auto}
+.langs button{border:0;background:transparent;padding:.3rem .65rem;border-radius:999px;font-size:.75rem;font-weight:600;color:#666;cursor:pointer}
+.langs button.active{background:#fff;color:#111;box-shadow:0 1px 3px rgba(0,0,0,.08)}
 .card{background:#fff;border-radius:16px;padding:1.25rem 1.2rem 1.4rem;box-shadow:0 8px 30px rgba(0,0,0,.08)}
 h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
 .row{display:flex;justify-content:space-between;margin-bottom:1rem;font-size:1rem}
@@ -242,17 +351,23 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
 <script src="https://www.paypal.com/sdk/js?client-id=${clientId}&currency=USD&intent=capture&components=buttons&enable-funding=venmo,paylater,card"></script>
 </head><body>
 <div class="wrap">
-  <div class="top"><span class="amt">${amountLabel} USD</span><span class="name">${safeName}</span></div>
+  <div class="topbar">
+    <div class="top"><span class="amt">${amountLabel} USD</span><span class="name">${safeName}</span></div>
+    <div class="langs">
+      <button type="button" id="btn-ar">عربي</button>
+      <button type="button" id="btn-en">English</button>
+    </div>
+  </div>
   <div class="card">
-    <h1>موجز الطلب</h1>
-    <div class="row"><span>الإجمالي</span><strong>${amountLabel} USD</strong></div>
-    <p class="sub">اليوزر: @${safeUser}</p>
-    <p class="sub">كوبي يوزر: ${safeId || "—"}</p>
-    <p class="sub">خيارات الدفع الإلكتروني السريع</p>
+    <h1 data-i18n="title"></h1>
+    <div class="row"><span data-i18n="total"></span><strong>${amountLabel} USD</strong></div>
+    <p class="sub"><span data-i18n="user"></span> @${safeUser}</p>
+    <p class="sub"><span data-i18n="id"></span> ${safeId || "—"}</p>
+    <p class="sub" data-i18n="payOpts"></p>
     <div id="paypal-buttons"></div>
     <p class="msg" id="err"></p>
   </div>
-  <p class="foot">مدعوم من PayPal · 𝐂𝐨𝐝𝐞𝐗</p>
+  <p class="foot" data-i18n="foot"></p>
 </div>
 <script>
 (function(){
@@ -261,14 +376,61 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
   var discordUser = ${JSON.stringify(String(discordUser || "").replace(/^@+/, ""))};
   var discordId = ${JSON.stringify(String(discordId || ""))};
   var err = document.getElementById('err');
-  function showErr(t){ err.style.display='block'; err.textContent=t||'فشل الدفع'; }
+  var I18N = {
+    ar: {
+      title: "موجز الطلب",
+      total: "الإجمالي",
+      user: "اليوزر:",
+      id: "كوبي يوزر:",
+      payOpts: "خيارات الدفع الإلكتروني السريع",
+      foot: "مدعوم من PayPal · 𝐂𝐨𝐝𝐞𝐗",
+      fail: "فشل الدفع",
+      createFail: "تعذر إنشاء الطلب",
+      captureFail: "تعذر تأكيد الدفع",
+      errPay: "حدث خطأ أثناء الدفع",
+      cancel: "تم إلغاء الدفع"
+    },
+    en: {
+      title: "Order summary",
+      total: "Total",
+      user: "Username:",
+      id: "Copy User ID:",
+      payOpts: "Express checkout options",
+      foot: "Powered by PayPal · 𝐂𝐨𝐝𝐞𝐗",
+      fail: "Payment failed",
+      createFail: "Could not create the order",
+      captureFail: "Could not confirm payment",
+      errPay: "Something went wrong during payment",
+      cancel: "Payment cancelled"
+    }
+  };
+  var lang = localStorage.getItem("codex_pay_lang") || ${JSON.stringify(initialLang)};
+  if (lang !== "en" && lang !== "ar") lang = "ar";
+  function t(){ return I18N[lang]; }
+  function apply(next){
+    lang = next;
+    localStorage.setItem("codex_pay_lang", lang);
+    document.documentElement.lang = lang;
+    document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
+    document.getElementById("btn-ar").classList.toggle("active", lang === "ar");
+    document.getElementById("btn-en").classList.toggle("active", lang === "en");
+    document.querySelectorAll("[data-i18n]").forEach(function(el){
+      var k = el.getAttribute("data-i18n");
+      if (t()[k] != null) el.textContent = t()[k];
+    });
+  }
+  document.getElementById("btn-ar").addEventListener("click", function(){ apply("ar"); });
+  document.getElementById("btn-en").addEventListener("click", function(){ apply("en"); });
+  apply(lang);
+
+  function showErr(msg){ err.style.display='block'; err.textContent=msg||t().fail; }
 
   function createOrder(){
     return fetch('/paypal/order', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ amount: Number(amount), name: name, discordUser: discordUser, discordId: discordId })
-    }).then(function(r){ return r.json().then(function(j){ if(!r.ok||!j.id) throw new Error(j.error||'تعذر إنشاء الطلب'); return j.id; }); });
+    }).then(function(r){ return r.json().then(function(j){ if(!r.ok||!j.id) throw new Error(j.error||t().createFail); return j.id; }); });
   }
   function onApprove(data){
     return fetch('/paypal/capture', {
@@ -277,12 +439,12 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       body: JSON.stringify({ orderID: data.orderID })
     }).then(function(r){ return r.json().then(function(j){
       if(j && (j.ok || j.status === 'COMPLETED')) { window.location='/pay/success'; return; }
-      if(!r.ok) throw new Error(j.error||'تعذر تأكيد الدفع');
+      if(!r.ok) throw new Error(j.error||t().captureFail);
       window.location='/pay/success';
     }); });
   }
-  function onError(e){ showErr((e&&e.message)||'حدث خطأ أثناء الدفع'); }
-  function onCancel(){ showErr('تم إلغاء الدفع'); }
+  function onError(e){ showErr((e&&e.message)||t().errPay); }
+  function onCancel(){ showErr(t().cancel); }
 
   if (paypal.Buttons) {
     paypal.Buttons({
@@ -325,11 +487,12 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       const discordId = String(
         req.query.discordId || req.query.id || req.query.d || "",
       ).trim();
+      const lang = String(req.query.lang || "").toLowerCase() === "en" ? "en" : "ar";
       // Always show the form unless both identity fields are present
       if (!discord || !/^\d{15,22}$/.test(discordId)) {
         return res
           .type("html")
-          .send(payFormPage({ amount, name, discord, discordId }));
+          .send(payFormPage({ amount, name, discord, discordId, lang }));
       }
       return res
         .type("html")
@@ -339,6 +502,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
             name,
             discordUser: discord,
             discordId,
+            lang,
           }),
         );
     } catch (e) {
@@ -362,6 +526,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       const discordId = String(req.body?.discordId || "")
         .trim()
         .replace(/\s+/g, "");
+      const lang = String(req.body?.lang || "").toLowerCase() === "en" ? "en" : "ar";
       if (!Number.isFinite(amount) || amount <= 0) {
         return res
           .status(400)
@@ -378,6 +543,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
               name,
               discord,
               discordId,
+              lang,
               error: "اكتب اليوزر قبل الدفع",
             }),
           );
@@ -392,6 +558,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
               name,
               discord,
               discordId,
+              lang,
               error: "الصق كوبي يوزر (آيدي الحساب) — أرقام فقط من دسكورد",
             }),
           );
@@ -404,6 +571,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
             name,
             discordUser: discord,
             discordId,
+            lang,
           }),
         );
     } catch (e) {
@@ -413,6 +581,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
         .trim()
         .replace(/^@+/, "");
       const discordId = String(req.body?.discordId || "").trim();
+      const lang = String(req.body?.lang || "").toLowerCase() === "en" ? "en" : "ar";
       if (Number.isFinite(amount) && amount > 0) {
         return res
           .status(400)
@@ -423,6 +592,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
               name,
               discord,
               discordId,
+              lang,
               error: e.message,
             }),
           );
