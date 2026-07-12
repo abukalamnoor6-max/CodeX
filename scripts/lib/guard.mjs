@@ -22,6 +22,23 @@ export const LOG_CHANNELS = {
   important: "1524972428974100631", // مهم
 };
 
+/** رومات ما نسجّل عليها حذف/تعديل/كل الرسائل */
+export const MESSAGE_LOG_IGNORE_CHANNELS = new Set([
+  "1525118012028489838", // prv
+  "1524971495921684601", // 📊 الطلبات
+  "1525807603546849433", // 💵 روابط الدفع
+  "1525631645393092738", // Control Panel
+]);
+
+/** لوقات حساسة — OWNER فقط (مو TEAM) */
+export const SENSITIVE_LOG_KEYS = new Set([
+  "permissions",
+  "ban",
+  "roles",
+  "important",
+  "general",
+]);
+
 const GUILD_ID = process.env.DISCORD_GUILD_ID || "1524901009195798679";
 const OWNER_ID = process.env.DISCORD_OWNER_ID || "1210972261968912425";
 
@@ -640,6 +657,7 @@ export function attachGuard(client, options = {}) {
   client.on("messageDelete", async (message) => {
     if (!message.guild || message.guild.id !== GUILD_ID) return;
     if (Object.values(LOG_CHANNELS).includes(message.channelId)) return;
+    if (MESSAGE_LOG_IGNORE_CHANNELS.has(message.channelId)) return;
 
     const cached = msgCache.get(message.id);
     msgCache.delete(message.id);
@@ -713,6 +731,7 @@ export function attachGuard(client, options = {}) {
   client.on("messageUpdate", async (oldMsg, newMsg) => {
     if (!newMsg.guild || newMsg.guild.id !== GUILD_ID) return;
     if (Object.values(LOG_CHANNELS).includes(newMsg.channelId)) return;
+    if (MESSAGE_LOG_IGNORE_CHANNELS.has(newMsg.channelId)) return;
 
     try {
       if (newMsg.partial) newMsg = await newMsg.fetch();

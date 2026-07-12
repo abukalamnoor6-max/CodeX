@@ -37,7 +37,6 @@ const SPECS = [
       PermissionFlagsBits.Speak,
       PermissionFlagsBits.Stream,
       PermissionFlagsBits.UseVAD,
-      PermissionFlagsBits.ChangeNickname,
       PermissionFlagsBits.SendVoiceMessages,
     ],
   },
@@ -81,7 +80,6 @@ const SPECS = [
       PermissionFlagsBits.Stream,
       PermissionFlagsBits.PrioritySpeaker,
       PermissionFlagsBits.UseVAD,
-      PermissionFlagsBits.ChangeNickname,
       PermissionFlagsBits.CreateInstantInvite,
     ],
   },
@@ -90,7 +88,6 @@ const SPECS = [
     key: "partner",
     perms: [
       PermissionFlagsBits.CreateInstantInvite,
-      PermissionFlagsBits.ChangeNickname,
       PermissionFlagsBits.UseExternalEmojis,
       PermissionFlagsBits.UseExternalStickers,
       PermissionFlagsBits.Stream,
@@ -102,7 +99,6 @@ const SPECS = [
     match: /𝐕𝐈𝐏|VIP/i,
     key: "vip",
     perms: [
-      PermissionFlagsBits.ChangeNickname,
       PermissionFlagsBits.UseExternalEmojis,
       PermissionFlagsBits.UseExternalStickers,
       PermissionFlagsBits.Stream,
@@ -114,7 +110,6 @@ const SPECS = [
     match: /𝐏𝐫𝐞𝐦𝐢𝐮𝐦|Premium/i,
     key: "premium",
     perms: [
-      PermissionFlagsBits.ChangeNickname,
       PermissionFlagsBits.UseExternalEmojis,
       PermissionFlagsBits.UseExternalStickers,
       PermissionFlagsBits.Stream,
@@ -127,7 +122,6 @@ const SPECS = [
     // must not match Premium Client — check order: premium before client
     exclude: /Premium|𝐏𝐫𝐞𝐦𝐢𝐮𝐦/i,
     perms: [
-      PermissionFlagsBits.ChangeNickname,
       PermissionFlagsBits.UseExternalEmojis,
       PermissionFlagsBits.UseExternalStickers,
       PermissionFlagsBits.Stream,
@@ -136,10 +130,9 @@ const SPECS = [
   {
     match: /𝐕𝐢𝐬𝐢𝐭𝐨𝐫|Visitor/i,
     key: "visitor",
-    perms: [PermissionFlagsBits.ChangeNickname],
+    perms: [],
   },
 ];
-
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 function findSpec(role) {

@@ -19,6 +19,7 @@ import {
   Routes,
   SlashCommandBuilder,
 } from "discord.js";
+import { MESSAGE_LOG_IGNORE_CHANNELS } from "./guard.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "../..");
@@ -39,6 +40,16 @@ export const LOG_TYPES = {
   invites: "🔗┝┃الدعوات",
   nicknames: "✏️┝┃الألقاب",
 };
+
+/** لوقات حساسة — OWNER فقط */
+export const SENSITIVE_CODEX_LOG_TYPES = new Set([
+  "admin",
+  "webhooks",
+  "moderation",
+  "roles",
+  "invites",
+  "automod",
+]);
 
 const COLORS = {
   blue: 0x3498db,
@@ -174,7 +185,13 @@ async function audit(guild, type, targetId, windowMs = 10000) {
 export async function setupLogRooms(guild, client, modRoleId = null) {
   const { data, g } = guildCfg(guild.id);
   const me = client.user.id;
-  const overwrites = [
+  const ownerId = process.env.DISCORD_OWNER_ID || "1210972261968912425";
+  const ownerRole =
+    process.env.DISCORD_STAFF_ROLE_OWNER || "1524961206144860333";
+  const teamRole =
+    process.env.DISCORD_STAFF_ROLE_TEAM || "1524961198360236084";
+
+  const baseDenyEveryone = [
     { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
     {
       id: me,
@@ -187,16 +204,44 @@ export async function setupLogRooms(guild, client, modRoleId = null) {
         PermissionFlagsBits.ManageChannels,
       ],
     },
-  ];
-  if (modRoleId || g.modRoleId) {
-    overwrites.push({
-      id: modRoleId || g.modRoleId,
+    {
+      id: ownerId,
       allow: [
         PermissionFlagsBits.ViewChannel,
         PermissionFlagsBits.ReadMessageHistory,
         PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.ManageMessages,
       ],
-    });
+    },
+    {
+      id: ownerRole,
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.ReadMessageHistory,
+      ],
+      deny: [PermissionFlagsBits.SendMessages],
+    },
+  ];
+
+  function overwritesFor(type) {
+    const list = [...baseDenyEveryone];
+    if (!SENSITIVE_CODEX_LOG_TYPES.has(type)) {
+      const mod = modRoleId || g.modRoleId || teamRole;
+      list.push({
+        id: mod,
+        allow: [
+          PermissionFlagsBits.ViewChannel,
+          PermissionFlagsBits.ReadMessageHistory,
+        ],
+        deny: [PermissionFlagsBits.SendMessages],
+      });
+    } else {
+      list.push({
+        id: teamRole,
+        deny: [PermissionFlagsBits.ViewChannel],
+      });
+    }
+    return list;
   }
 
   let category = g.categoryId
@@ -206,7 +251,7 @@ export async function setupLogRooms(guild, client, modRoleId = null) {
     category = await guild.channels.create({
       name: "📋┝┃سجلات・codeX",
       type: ChannelType.GuildCategory,
-      permissionOverwrites: overwrites,
+      permissionOverwrites: overwritesFor("messages"),
       reason: "codeX full logs",
     });
     g.categoryId = category.id;
@@ -218,6 +263,9 @@ export async function setupLogRooms(guild, client, modRoleId = null) {
       ? guild.channels.cache.get(g.channels[type])
       : null;
     if (existing) {
+      try {
+        await existing.permissionOverwrites.set(overwritesFor(type));
+      } catch {}
       created.push(`✅ ${existing}`);
       continue;
     }
@@ -225,7 +273,7 @@ export async function setupLogRooms(guild, client, modRoleId = null) {
       name,
       type: ChannelType.GuildText,
       parent: category.id,
-      permissionOverwrites: overwrites,
+      permissionOverwrites: overwritesFor(type),
       reason: "codeX log room",
     });
     g.channels[type] = channel.id;
@@ -249,6 +297,7 @@ export function attachCodexLogs(client, { guildId, ownerId }) {
 
   client.on("messageCreate", async (msg) => {
     if (!msg.guild || msg.author.bot || msg.guild.id !== guildId) return;
+    if (MESSAGE_LOG_IGNORE_CHANNELS.has(msg.channelId)) return;
     const ch = await getCh(client, msg.guild.id, "allmessages");
     if (!ch) return;
     const e = new EmbedBuilder()
@@ -272,6 +321,7 @@ export function attachCodexLogs(client, { guildId, ownerId }) {
 
   client.on("messageDelete", async (msg) => {
     if (!msg.guild || msg.author?.bot || msg.guild.id !== guildId) return;
+    if (MESSAGE_LOG_IGNORE_CHANNELS.has(msg.channelId)) return;
     const ch = await getCh(client, msg.guild.id, "messages");
     if (!ch) return;
     await send(ch, {
@@ -301,6 +351,7 @@ export function attachCodexLogs(client, { guildId, ownerId }) {
       oldMsg.content === newMsg.content
     )
       return;
+    if (MESSAGE_LOG_IGNORE_CHANNELS.has(oldMsg.channelId)) return;
     const ch = await getCh(client, oldMsg.guild.id, "messages");
     if (!ch) return;
     await send(ch, {
@@ -321,6 +372,7 @@ export function attachCodexLogs(client, { guildId, ownerId }) {
   client.on("messageDeleteBulk", async (msgs) => {
     const first = msgs.first();
     if (!first?.guild || first.guild.id !== guildId) return;
+    if (MESSAGE_LOG_IGNORE_CHANNELS.has(first.channelId)) return;
     const ch = await getCh(client, first.guild.id, "messages");
     if (!ch) return;
     const entry = await audit(first.guild, AuditLogEvent.MessageBulkDelete);
