@@ -237,6 +237,89 @@ function buildRatingButtons(orderId) {
   );
 }
 
+async function resolveCustomerFromEmbed(desc = "") {
+  const text = String(desc || "");
+
+  // Prefer explicit customer mention lines (avoid staff role noise)
+  const discordField =
+    (text.match(/\*\*دسكورد(?: العميل)?:\*\*\s*(.+)/i) || [])[1] || "";
+  const mentionInField = (discordField.match(/<@!?(\d{15,22})>/) || [])[1];
+  if (mentionInField) {
+    try {
+      return await client.users.fetch(mentionInField);
+    } catch {}
+  }
+
+  const anyCustomerMention =
+    (text.match(/\*\*منشن:\*\*\s*<@!?(\d{15,22})>/) || [])[1] ||
+    (text.match(/\*\*دسكورد:\*\*\s*<@!?(\d{15,22})>/) || [])[1];
+  if (anyCustomerMention) {
+    try {
+      return await client.users.fetch(anyCustomerMention);
+    } catch {}
+  }
+
+  const rawId = (discordField.match(/\d{15,22}/) || [])[0];
+  if (rawId) {
+    try {
+      return await client.users.fetch(rawId);
+    } catch {}
+  }
+
+  // Username from ` @user ` or plain text
+  let username = discordField
+    .replace(/<@!?\d+>/g, "")
+    .replace(/[`@]/g, "")
+    .replace(/^—$/, "")
+    .trim();
+  if (!username || username === "—") {
+    username = ((text.match(/\*\*الاسم:\*\*\s*(.+)/) || [])[1] || "")
+      .replace(/^عميل(?: PayPal)?$/i, "")
+      .trim();
+  }
+  if (!username || username.length < 2) return null;
+
+  try {
+    const guild = await client.guilds.fetch(GUILD_ID);
+    const results = await guild.members.search({ query: username, limit: 15 });
+    const exact =
+      results.find(
+        (m) => m.user.username.toLowerCase() === username.toLowerCase(),
+      ) ||
+      results.find(
+        (m) =>
+          (m.user.globalName || "").toLowerCase() === username.toLowerCase(),
+      ) ||
+      results.find(
+        (m) => m.displayName.toLowerCase() === username.toLowerCase(),
+      );
+    if (exact) return exact.user;
+    if (results.size === 1) return results.first().user;
+  } catch (e) {
+    console.warn("customer username resolve failed", e.message);
+  }
+  return null;
+}
+
+function applyStatusToInvoiceEmbed(embed, statusEntry) {
+  const next = EmbedBuilder.from(embed);
+  let desc = next.data.description || "";
+  const statusLine = `**حالة الطلب:** ${statusEntry.staffLabel}`;
+  if (/\*\*حالة الطلب:\*\*/.test(desc)) {
+    desc = desc.replace(/\*\*حالة الطلب:\*\*[^\n]*/g, statusLine);
+  } else if (/\*\*حالة الدفع:\*\*/.test(desc)) {
+    desc = desc.replace(
+      /(\*\*حالة الدفع:\*\*[^\n]*)/,
+      `$1\n${statusLine}`,
+    );
+  } else {
+    desc = `${statusLine}\n\n${desc}`;
+  }
+  next.setDescription(desc);
+  next.setColor(statusEntry.embedColor);
+  return next;
+}
+
 function buildOrderEmbed(order, statusKey = "received") {
   const st = STATUS[statusKey] || STATUS.received;
   const items = (order.items || [])
@@ -457,31 +540,38 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   await interaction.deferUpdate();
 
-  const embed = EmbedBuilder.from(interaction.message.embeds[0] || {});
-  const desc = embed.data.description || "";
-  const customerMention = (desc.match(/<@(\d{15,20})>/) || [])[1];
-  const discordLine = (desc.match(/\*\*دسكورد العميل:\*\*\s*(.+)/) || [])[1];
-  const customerName = (desc.match(/\*\*العميل:\*\*\s*(.+)/) || [])[1];
-
-  const statusKey = Object.keys(STATUS).find((k) => STATUS[k].id === action);
-  const updated = buildOrderEmbed(
-    {
-      orderId,
-      customerName: customerName || "—",
-      discord: discordLine || "—",
-      customerId: customerMention,
-      items: [],
-      total: "—",
-      paymentMethod: "—",
-      paymentStatus: "—",
-    },
-    statusKey,
+  const original = interaction.message.embeds[0];
+  const desc = original?.description || "";
+  const isInvoice = /فاتورة|رقم الفاتورة/i.test(
+    `${original?.title || ""}\n${desc}`,
   );
+  const statusKey = Object.keys(STATUS).find((k) => STATUS[k].id === action);
 
-  const oldFields = interaction.message.embeds[0]?.fields || [];
-  for (const f of oldFields) {
-    if (f.name === "المنتجات" || f.name === "ملاحظات") {
-      updated.addFields({ name: f.name, value: f.value });
+  let updated;
+  if (isInvoice) {
+    updated = applyStatusToInvoiceEmbed(original, statusEntry);
+  } else {
+    const customerMention = (desc.match(/<@(\d{15,22})>/) || [])[1];
+    const discordLine = (desc.match(/\*\*دسكورد العميل:\*\*\s*(.+)/) || [])[1];
+    const customerName = (desc.match(/\*\*العميل:\*\*\s*(.+)/) || [])[1];
+    updated = buildOrderEmbed(
+      {
+        orderId,
+        customerName: customerName || "—",
+        discord: discordLine || "—",
+        customerId: customerMention,
+        items: [],
+        total: "—",
+        paymentMethod: "—",
+        paymentStatus: "—",
+      },
+      statusKey,
+    );
+    const oldFields = original?.fields || [];
+    for (const f of oldFields) {
+      if (f.name === "المنتجات" || f.name === "ملاحظات") {
+        updated.addFields({ name: f.name, value: f.value });
+      }
     }
   }
 
@@ -490,20 +580,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     components: [buildButtons(orderId)],
   });
 
-  let user = null;
-  if (customerMention) {
-    try {
-      user = await client.users.fetch(customerMention);
-    } catch {}
-  }
-  if (!user && discordLine) {
-    const id = (String(discordLine).match(/\d{15,20}/) || [])[0];
-    if (id) {
-      try {
-        user = await client.users.fetch(id);
-      } catch {}
-    }
-  }
+  const user = await resolveCustomerFromEmbed(desc);
 
   if (user) {
     try {
@@ -531,8 +608,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
       await interaction.followUp({
         content: statusEntry.sendRating
-          ? "✅ تم التسليم، وانرسل للعميل رسالة تقييم بالنجوم."
-          : "✅ تم تحديث الحالة وإرسال خاص للعميل.",
+          ? `✅ تم التسليم، وانرسل لـ ${user} رسالة تقييم بالنجوم.`
+          : `✅ تم إرسال حالة الطلب لـ ${user}: ${statusEntry.staffLabel}`,
         flags: MessageFlags.Ephemeral,
       });
     } catch {
@@ -545,7 +622,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   } else {
     await interaction.followUp({
       content:
-        "⚠️ تم تحديث الحالة، لكن ما لقيت آيدي دسكورد العميل لإرسال الخاص.",
+        "⚠️ تم تحديث الحالة، لكن ما لقيت دسكورد العميل. تأكد إنه كتب يوزره صح وهو داخل السيرفر.",
       flags: MessageFlags.Ephemeral,
     });
   }
@@ -591,6 +668,7 @@ async function sendPaidInvoice({
         `**رقم الفاتورة:** \`${invoiceNo}\``,
         `**التاريخ:** ${paidAt}${modeLabel ? ` (${modeLabel})` : ""}`,
         `**حالة الدفع:** مدفوع ✅`,
+        `**حالة الطلب:** 🟡 بانتظار الفريق`,
         `**طريقة الدفع:** ${paymentMethod}`,
         "",
         "👤 **بيانات العميل**",
