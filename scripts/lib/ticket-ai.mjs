@@ -172,7 +172,7 @@ function localFallbackReply(userText) {
         "• برمجة سيرفر ديسكورد كامل — 200 ر.س",
         "• باقات خاص المتجر: 5 / 50 / 100 / 250 / 500 / 1000 ر.س",
         "",
-        "المتجر: https://codexshop112.rmz.gg",
+        "المتجر: https://codex112.rmz.gg",
         "للتفاصيل الدقيقة اضغط زر تحويل لدعم بشري.",
       ].join("\n"),
       suggest_human: true,

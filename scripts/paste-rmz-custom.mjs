@@ -99,7 +99,7 @@ console.log({
 console.log(ok ? "SUCCESS" : "PARTIAL");
 
 const store = await browser.newPage();
-await store.goto("https://codexshop112.rmz.gg/?fixgap=" + Date.now(), {
+await store.goto("https://codex112.rmz.gg/?fixgap=" + Date.now(), {
   waitUntil: "domcontentloaded",
   timeout: 120000,
 });

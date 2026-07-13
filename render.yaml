@@ -16,5 +16,6 @@ services:
         value: "1524961264869310494"
       - key: DISCORD_REVIEWS_CHANNEL_ID
         value: "1524981051787837540"
+      # optional: CDN base for Discord image assets only
       - key: NEXT_PUBLIC_SITE_URL
         value: "https://codex-theta-two.vercel.app"

@@ -2,7 +2,7 @@
 
 **متجر 𝐂𝐨𝐝𝐞𝐗 الرسمي**
 
-🔗 https://codexshop112.rmz.gg
+🔗 https://codex112.rmz.gg
 
 ### الخدمات
 - برمجة فايف إم

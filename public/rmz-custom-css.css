@@ -27,8 +27,16 @@ body {
   pointer-events: none !important;
   display: block !important;
   background: transparent !important;
-  /* يمنع أي تأثير على تدفق الصفحة */
   float: none !important;
   clear: none !important;
   transform: translateZ(0);
+}
+
+/* إخفاء تلميح السحب افتراضياً — يظهر فقط عند الحاجة عبر JS */
+p.swipe-hint {
+  display: none !important;
+}
+
+p.swipe-hint.codex-swipe-visible {
+  display: block !important;
 }

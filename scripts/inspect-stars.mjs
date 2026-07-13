@@ -6,7 +6,7 @@ const browser = await chromium.launchPersistentContext(userData, {
   viewport: { width: 1400, height: 900 },
 });
 const page = browser.pages()[0] || await browser.newPage();
-await page.goto("https://codexshop112.rmz.gg/?v=" + Date.now(), { waitUntil: "domcontentloaded", timeout: 120000 });
+await page.goto("https://codex112.rmz.gg/?v=" + Date.now(), { waitUntil: "domcontentloaded", timeout: 120000 });
 await page.waitForTimeout(4000);
 const info = await page.evaluate(() => {
   const canvas = document.getElementById("codex-starfield");

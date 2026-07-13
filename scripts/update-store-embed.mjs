@@ -16,7 +16,7 @@ if (!TOKEN) {
 const description = [
   "**متجر 𝐂𝐨𝐝𝐞𝐗 الرسمي**",
   "",
-  "🔗 https://codexshop112.rmz.gg",
+  "🔗 https://codex112.rmz.gg",
   "",
   "### الخدمات",
   "• برمجة فايف إم",
@@ -58,7 +58,7 @@ client.once("clientReady", async () => {
       .setTimestamp();
 
     await channel.send({ embeds: [embed] });
-    await channel.send("🛒 **رابط المتجر:** https://codexshop112.rmz.gg");
+    await channel.send("🛒 **رابط المتجر:** https://codex112.rmz.gg");
     console.log("SUCCESS");
   } catch (e) {
     console.error("FAILED", e.message);

@@ -2,14 +2,20 @@
   if (window.__CODEX_FX__) return;
   window.__CODEX_FX__ = true;
 
-  var AUDIO_URL = "https://codex-theta-two.vercel.app/welcome-codex-v3.mp3";
+  // أخفِ تلميح السحب فوراً قبل تحميل المنتجات
+  try {
+    var early = document.createElement("style");
+    early.id = "codex-swipe-hide";
+    early.textContent =
+      "p.swipe-hint{display:none!important;}p.swipe-hint.codex-swipe-visible{display:block!important;}";
+    (document.head || document.documentElement).appendChild(early);
+  } catch (e) {}
 
   function initStars() {
     if (document.getElementById("codex-starfield")) return;
 
     var canvas = document.createElement("canvas");
     canvas.id = "codex-starfield";
-    // Fixed overlay only — NEVER in document flow (avoids header gap)
     function forceFixed() {
       canvas.style.setProperty("position", "fixed", "important");
       canvas.style.setProperty("top", "0", "important");
@@ -27,8 +33,6 @@
       canvas.style.setProperty("background", "transparent", "important");
     }
     forceFixed();
-
-    // Append at END so even a brief layout flash can't push the header down
     document.body.appendChild(canvas);
     forceFixed();
 
@@ -98,80 +102,161 @@
     draw();
   }
 
-  function showTapHint(onTap) {
-    if (document.getElementById("codex-audio-unlock")) return;
-    var btn = document.createElement("button");
-    btn.id = "codex-audio-unlock";
-    btn.type = "button";
-    btn.textContent = "🔊 اضغط للترحيب";
-    btn.setAttribute(
-      "style",
-      [
-        "position:fixed",
-        "left:16px",
-        "bottom:16px",
-        "z-index:99999",
-        "border:1px solid rgba(255,255,255,.25)",
-        "background:rgba(10,10,15,.92)",
-        "color:#fff",
-        "padding:10px 14px",
-        "border-radius:12px",
-        "font:600 13px/1.2 sans-serif",
-        "cursor:pointer",
-        "backdrop-filter:blur(10px)",
-        "box-shadow:0 8px 30px rgba(0,0,0,.45)",
-      ].join(";"),
-    );
-    btn.addEventListener("click", function () {
-      onTap();
-      btn.remove();
-    });
-    document.body.appendChild(btn);
-    setTimeout(function () {
-      if (btn.parentNode) btn.remove();
-    }, 12000);
+  function findScroller(section) {
+    var scope =
+      section.querySelector(".products-content") ||
+      section.querySelector(".products-lazy-container") ||
+      section;
+    var nodes = scope.querySelectorAll("*");
+    var best = null;
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      var style = window.getComputedStyle(el);
+      var ox = style.overflowX;
+      if (ox !== "auto" && ox !== "scroll") continue;
+      if (!best || el.scrollWidth > best.scrollWidth) best = el;
+    }
+    if (best) return best;
+
+    var flex = scope.querySelector(".flex");
+    return flex || scope;
   }
 
-  function playWelcome() {
-    try {
-      if (sessionStorage.getItem("codex_welcome_played") === "1") return;
-      var audio = new Audio(AUDIO_URL);
-      audio.preload = "auto";
-      audio.volume = 1;
-      var played = false;
+  function updateSwipeHints() {
+    codexDedupeSections();
+    var hints = document.querySelectorAll("p.swipe-hint");
+    for (var i = 0; i < hints.length; i++) {
+      var hint = hints[i];
+      // مخفي افتراضياً — يظهر فقط إذا السلايدر أوسع من الشاشة
+      hint.style.setProperty("display", "none", "important");
+      hint.classList.remove("codex-swipe-visible");
 
-      function go() {
-        if (played) return;
-        var p = audio.play();
-        if (p && typeof p.then === "function") {
-          p.then(function () {
-            played = true;
-            sessionStorage.setItem("codex_welcome_played", "1");
-            var hint = document.getElementById("codex-audio-unlock");
-            if (hint) hint.remove();
-          }).catch(function () {
-            showTapHint(go);
-          });
-        } else {
-          played = true;
-          sessionStorage.setItem("codex_welcome_played", "1");
+      var section = hint.closest("section");
+      if (!section) continue;
+
+      var scroller = findScroller(section);
+      var needsScroll = false;
+
+      if (scroller) {
+        needsScroll = scroller.scrollWidth > scroller.clientWidth + 4;
+      }
+
+      // احتياط: صف المنتجات أعرض من الحاوية
+      if (!needsScroll) {
+        var content =
+          section.querySelector(".products-content") ||
+          section.querySelector(".products-lazy-container");
+        var row =
+          (content && content.querySelector(".flex")) ||
+          (content && content.firstElementChild);
+        if (content && row) {
+          needsScroll = row.scrollWidth > content.clientWidth + 4;
         }
       }
 
-      setTimeout(go, 500);
-      ["pointerdown", "click", "touchstart", "keydown"].forEach(function (evt) {
-        window.addEventListener(evt, go, { once: true, capture: true });
+      // احتياط أخير بعدد الكروت مقابل عرض الشاشة
+      if (!needsScroll) {
+        var cards = section.querySelectorAll(
+          ".product-item, a[href*='/product/']",
+        );
+        var unique = {};
+        var count = 0;
+        for (var c = 0; c < cards.length; c++) {
+          var key =
+            cards[c].getAttribute("href") ||
+            cards[c].innerText ||
+            String(c);
+          if (!unique[key]) {
+            unique[key] = true;
+            count += 1;
+          }
+        }
+        var cardW = 280;
+        var gap = 16;
+        var pad = 48;
+        var fit = Math.max(
+          1,
+          Math.floor((window.innerWidth - pad + gap) / (cardW + gap)),
+        );
+        needsScroll = count > fit;
+      }
+
+      if (needsScroll) {
+        hint.style.setProperty("display", "block", "important");
+        hint.classList.add("codex-swipe-visible");
+      }
+    }
+  }
+
+  function initSwipeHints() {
+    updateSwipeHints();
+    window.addEventListener("resize", updateSwipeHints);
+    // products load lazily — recheck a few times
+    var tries = 0;
+    var timer = setInterval(function () {
+      updateSwipeHints();
+      tries += 1;
+      if (tries >= 20) clearInterval(timer);
+    }, 500);
+    document.addEventListener("DOMContentLoaded", updateSwipeHints);
+    // observe lazy containers filling in
+    try {
+      var mo = new MutationObserver(function () {
+        updateSwipeHints();
       });
+      mo.observe(document.body, { childList: true, subtree: true });
     } catch (e) {}
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", function () {
-      initStars();
-      playWelcome();
-    });
-  } else {
+  function codexDedupeSections() {
+    // توحيد اسم قسم الدسكورد
+    var heads = document.querySelectorAll("h2, a, span, button");
+    for (var i = 0; i < heads.length; i++) {
+      var el = heads[i];
+      if (!el.childElementCount && (el.textContent || "").trim() === "بوتات دسكورد") {
+        el.textContent = "قسم الدسكورد";
+      }
+    }
+
+    var seen = {};
+    var sections = document.querySelectorAll("section.py-12");
+    for (var s = 0; s < sections.length; s++) {
+      var sec = sections[s];
+      var h2 = sec.querySelector("h2");
+      var title = (h2 && h2.innerText || "").trim();
+      if (title === "بوتات دسكورد") {
+        title = "قسم الدسكورد";
+        if (h2) h2.textContent = title;
+      }
+      if (!title) continue;
+      if (seen[title]) {
+        sec.style.setProperty("display", "none", "important");
+      } else {
+        seen[title] = true;
+        sec.style.removeProperty("display");
+      }
+    }
+    // أخفِ كل تلميحات السحب دائماً (العرض شبكة)
+    var hints = document.querySelectorAll("p.swipe-hint");
+    for (var h = 0; h < hints.length; h++) {
+      hints[h].style.setProperty("display", "none", "important");
+    }
+  }
+
+  function boot() {
+    codexDedupeSections();
+    setTimeout(codexDedupeSections, 800);
+    setTimeout(codexDedupeSections, 2000);
+    // أزل زر الترحيب لو كان باقي من نسخة قديمة
+    var oldBtn = document.getElementById("codex-audio-unlock");
+    if (oldBtn) oldBtn.remove();
     initStars();
-    playWelcome();
+    initSwipeHints();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
   }
 })();

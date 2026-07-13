@@ -7,7 +7,7 @@ import {
 
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const GUILD_ID = process.env.DISCORD_GUILD_ID || "1524901009195798679";
-const STORE_URL = "https://codexshop112.rmz.gg";
+const STORE_URL = "https://codex112.rmz.gg";
 
 if (!TOKEN) {
   console.error("Missing DISCORD_BOT_TOKEN");

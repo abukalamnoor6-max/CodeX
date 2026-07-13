@@ -226,7 +226,7 @@ client.once("clientReady", async () => {
             title: "🌐 الموقع الإلكتروني — codeX",
             description: [
               "**رابط المتجر:**",
-              "https://codexshop112.rmz.gg",
+              "https://codex112.rmz.gg",
               "",
               "من هنا تقدر تتصفح المنتجات وتطلب خدمات فايف إم وبوتات الدسكورد.",
             ].join("\n"),

@@ -19,10 +19,10 @@ console.log(JSON.stringify(nav, null, 2));
 
 // Try storefront account/benefits pages
 for (const url of [
-  "https://codexshop112.rmz.gg/",
-  "https://codexshop112.rmz.gg/account",
-  "https://codexshop112.rmz.gg/benefits",
-  "https://codexshop112.rmz.gg/me",
+  "https://codex112.rmz.gg/",
+  "https://codex112.rmz.gg/account",
+  "https://codex112.rmz.gg/benefits",
+  "https://codex112.rmz.gg/me",
   "https://app.rmz.gg/benefits",
   "https://app.rmz.gg/store/settings",
 ]) {

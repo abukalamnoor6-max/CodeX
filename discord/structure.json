@@ -1,7 +1,7 @@
 {
   "name": "𝐂𝐨𝐝𝐞𝐗",
   "brandColor": "#0059db",
-  "storeUrl": "https://codexshop112.rmz.gg",
+  "storeUrl": "https://codex112.rmz.gg",
   "roles": [
     { "name": "👑 Owner", "color": "#ef4444", "hoist": true, "permissions": "ADMINISTRATOR" },
     { "name": "🛠️ Admin", "color": "#f97316", "hoist": true },

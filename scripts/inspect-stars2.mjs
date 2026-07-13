@@ -8,7 +8,7 @@ const browser = await chromium.launchPersistentContext(userData, {
 const page = browser.pages()[0] || await browser.newPage();
 page.on("console", (m) => console.log("CONSOLE", m.type(), m.text()));
 page.on("pageerror", (e) => console.log("PAGEERROR", e.message));
-await page.goto("https://codexshop112.rmz.gg/?fixstars=" + Date.now(), { waitUntil: "networkidle", timeout: 120000 });
+await page.goto("https://codex112.rmz.gg/?fixstars=" + Date.now(), { waitUntil: "networkidle", timeout: 120000 });
 await page.waitForTimeout(5000);
 const info = await page.evaluate(() => {
   const html = document.documentElement.outerHTML;

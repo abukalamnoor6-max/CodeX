@@ -1,7 +1,7 @@
 import { Client, GatewayIntentBits, EmbedBuilder, ChannelType } from "discord.js";
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const GUILD_ID = "1524901009195798679";
-const STORE_URL = "https://codexshop112.rmz.gg";
+const STORE_URL = "https://codex112.rmz.gg";
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 function embed(title, description) {
   return new EmbedBuilder().setColor(0x0059db).setTitle(title).setDescription(description)
