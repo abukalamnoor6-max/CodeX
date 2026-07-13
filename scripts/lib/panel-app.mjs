@@ -678,6 +678,12 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
 .row strong{font-size:1.05rem}
 .sub{margin:0 0 .55rem;color:#555;font-size:.9rem}
 #paypal-buttons{min-height:140px;margin-top:.6rem}
+#mobile-pay{display:none;margin-top:.6rem}
+.m-pay{width:100%;border:0;border-radius:4px;padding:.95rem 1rem;font-weight:700;font-size:1rem;cursor:pointer;margin:0 0 .55rem}
+.m-paypal{background:#ffc439;color:#003087}
+.m-card{background:#2c2e2f;color:#fff;display:flex;align-items:center;justify-content:center;gap:.55rem}
+.m-card svg{width:22px;height:16px;fill:#fff}
+.m-powered{margin:.15rem 0 0;text-align:center;color:#888;font-size:.75rem}
 .msg{margin-top:.9rem;color:#b91c1c;font-size:.88rem;display:none}
 .foot{margin-top:1rem;text-align:center;color:#888;font-size:.78rem}
 .resume{display:none;margin-top:.85rem;width:100%;border:0;border-radius:12px;padding:.9rem 1rem;background:#0f766e;color:#fff;font-weight:700;font-size:.95rem;cursor:pointer}
@@ -702,6 +708,14 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     <p class="sub"><span data-i18n="user"></span> @${safeUser}</p>
     <p class="sub" data-i18n="payOpts"></p>
     <div id="paypal-buttons"></div>
+    <div id="mobile-pay">
+      <button type="button" class="m-pay m-paypal" id="mPayPal">PayPal</button>
+      <button type="button" class="m-pay m-card" id="mCard">
+        <svg viewBox="0 0 24 16" aria-hidden="true"><rect x="1" y="1" width="22" height="14" rx="2" fill="none" stroke="#fff" stroke-width="1.5"/><path d="M1 5h22" stroke="#fff" stroke-width="1.5"/><rect x="3.5" y="9" width="6" height="2" rx=".5"/></svg>
+        <span>Debit or Credit Card</span>
+      </button>
+      <p class="m-powered">Powered by PayPal</p>
+    </div>
     <button type="button" class="resume" id="resumeBtn" data-i18n="resume"></button>
     <p class="msg" id="err"></p>
   </div>
@@ -989,14 +1003,52 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     });
   });
 
-  if (window.paypal && paypal.Buttons) {
-    paypal.Buttons({
-      style: { layout:'vertical', color:'gold', shape:'rect', label:'paypal', height:48 },
-      createOrder: createOrder,
-      onApprove: onApprove,
-      onError: onError,
-      onCancel: onCancel
-    }).render('#paypal-buttons');
+  var ua = navigator.userAgent || '';
+  var isMobile = /Android|iPhone|iPad|iPod|Mobile|Discord|FBAN|Line\//i.test(ua)
+    || ((window.matchMedia && window.matchMedia('(max-width: 900px)').matches)
+      && ('ontouchstart' in window));
+
+  function startMobileRedirect(){
+    showOverlay();
+    overlay.textContent = t().confirming;
+    fetch('/paypal/order', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(createOrderPayload())
+    }).then(function(r){
+      return r.json().then(function(j){
+        if (!r.ok || !j.url) throw new Error((j && j.error) || t().createFail);
+        savePending(j.id);
+        // Full-page PayPal — return_url /pay/return sends buyer to success
+        window.location.href = j.url;
+      });
+    }).catch(function(e){
+      hideOverlay();
+      showErr((e && e.message) || t().errPay);
+    });
+  }
+
+  if (isMobile) {
+    // Smart Buttons break success redirect inside mobile/Discord WebViews.
+    // Use full PayPal redirect so /pay/return always runs after payment.
+    var desk = document.getElementById('paypal-buttons');
+    var mob = document.getElementById('mobile-pay');
+    if (desk) desk.style.display = 'none';
+    if (mob) mob.style.display = 'block';
+    document.getElementById('mPayPal').addEventListener('click', startMobileRedirect);
+    document.getElementById('mCard').addEventListener('click', startMobileRedirect);
+  } else {
+    var mobHide = document.getElementById('mobile-pay');
+    if (mobHide) mobHide.style.display = 'none';
+    if (window.paypal && paypal.Buttons) {
+      paypal.Buttons({
+        style: { layout:'vertical', color:'gold', shape:'rect', label:'paypal', height:48 },
+        createOrder: createOrder,
+        onApprove: onApprove,
+        onError: onError,
+        onCancel: onCancel
+      }).render('#paypal-buttons');
+    }
   }
 })();
 </script>
@@ -1010,6 +1062,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       user: client.user?.tag || null,
       paypal: Boolean(paypalPayments),
       discordOAuth: oauth.enabled,
+      payReturn: `${oauth.publicBase || ""}/pay/return`,
     });
   });
 
