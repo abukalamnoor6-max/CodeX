@@ -119,12 +119,13 @@ export function createPanelApp({
       if (!paypalPayments) {
         return res.status(503).json({ error: "PayPal not configured" });
       }
-      const { name, amount, discordId, discordUser } = req.body || {};
+      const { name, amount, discordId, discordUser, lang } = req.body || {};
       const order = await paypalPayments.createOrder({
         name: name || "𝐂𝐨𝐝𝐞𝐗 — خدمة",
         amountMajor: amount,
         discordId,
         discordUser,
+        lang,
       });
       res.json({ ok: true, id: order.id, url: order.url, status: order.status });
     } catch (e) {
@@ -519,6 +520,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     <p class="msg" id="err"></p>
   </div>
   <p class="foot" data-i18n="foot"></p>
+  <p class="foot" style="margin-top:.35rem;font-size:.72rem" data-i18n="mobileTip"></p>
 </div>
 <script>
 (function(){
@@ -535,6 +537,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       id: "كوبي يوزر:",
       payOpts: "خيارات الدفع الإلكتروني السريع",
       foot: "مدعوم من PayPal · 𝐂𝐨𝐝𝐞𝐗",
+      mobileTip: "من الجوال: افتح الرابط في Safari أو Chrome (مو داخل دسكورد) عشان ترجع لصفحة النجاح.",
       fail: "فشل الدفع",
       createFail: "تعذر إنشاء الطلب",
       captureFail: "تعذر تأكيد الدفع",
@@ -548,6 +551,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       id: "Copy User ID:",
       payOpts: "Express checkout options",
       foot: "Powered by PayPal · 𝐂𝐨𝐝𝐞𝐗",
+      mobileTip: "On mobile: open this link in Safari/Chrome (not inside Discord) so you return to the success page.",
       fail: "Payment failed",
       createFail: "Could not create the order",
       captureFail: "Could not confirm payment",
@@ -595,23 +599,45 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     return fetch('/paypal/order', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ amount: Number(amount), name: name, discordUser: discordUser, discordId: discordId })
+      body: JSON.stringify({
+        amount: Number(amount),
+        name: name,
+        discordUser: discordUser,
+        discordId: discordId,
+        lang: lang
+      })
     }).then(function(r){ return r.json().then(function(j){ if(!r.ok||!j.id) throw new Error(j.error||t().createFail); return j.id; }); });
   }
-  function onApprove(data){
+  function onApprove(data, actions){
     var orderId = (data && data.orderID) || '';
     var url = successUrl(orderId);
-    // Capture in background; always leave checkout so buyer sees thank-you
-    try {
-      fetch('/paypal/capture', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ orderID: orderId }),
-        keepalive: true
-      }).catch(function(){});
-    } catch (e) {}
-    window.location.replace(url);
-    return Promise.resolve();
+    function go(){
+      try { window.top.location.replace(url); } catch (e1) {
+        try { window.location.replace(url); } catch (e2) {
+          window.location.href = url;
+        }
+      }
+    }
+    // Prefer client capture when available (desktop); always redirect after
+    var capturePromise =
+      actions && actions.order && typeof actions.order.capture === 'function'
+        ? actions.order.capture().catch(function(){
+            return fetch('/paypal/capture', {
+              method:'POST',
+              headers:{'Content-Type':'application/json'},
+              body: JSON.stringify({ orderID: orderId }),
+              keepalive: true
+            });
+          })
+        : fetch('/paypal/capture', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ orderID: orderId }),
+            keepalive: true
+          });
+    // Hard timeout so mobile never stays stuck on checkout
+    setTimeout(go, 1200);
+    return Promise.resolve(capturePromise).then(go, go);
   }
   function onError(e){ showErr((e&&e.message)||t().errPay); }
   function onCancel(){ showErr(t().cancel); }
