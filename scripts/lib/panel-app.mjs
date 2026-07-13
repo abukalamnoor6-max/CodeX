@@ -186,6 +186,59 @@ export function createPanelApp({
     }
   });
 
+  app.get("/paypal/status", async (req, res) => {
+    try {
+      if (!paypalPayments) {
+        return res.status(503).json({ ok: false, error: "PayPal not configured" });
+      }
+      const orderId = String(req.query.id || req.query.token || "").trim();
+      if (!orderId) {
+        return res.status(400).json({ ok: false, error: "id required" });
+      }
+      const order = await paypalPayments.getOrder(orderId);
+      const status = String(order?.status || "");
+      const captured = order?.purchase_units?.some((u) =>
+        u.payments?.captures?.some((c) =>
+          ["COMPLETED", "PENDING"].includes(String(c.status || "")),
+        ),
+      );
+      const paid =
+        status === "COMPLETED" ||
+        status === "APPROVED" ||
+        Boolean(captured);
+      if (paid && status === "APPROVED") {
+        try {
+          await paypalPayments.captureOrder(orderId);
+        } catch {
+          // webhook / already captured
+        }
+      }
+      const saved = takePayMeta(orderId) || {};
+      let custom = {};
+      try {
+        custom =
+          paypalPayments.decodeCustomId?.(
+            order?.purchase_units?.[0]?.custom_id || "",
+          ) || {};
+      } catch {
+        custom = {};
+      }
+      res.json({
+        ok: true,
+        paid,
+        status,
+        id: orderId,
+        amount:
+          saved.amount || order?.purchase_units?.[0]?.amount?.value || "",
+        name: saved.name || custom.productName || "",
+        user: saved.user || custom.discordUser || "",
+        lang: saved.lang || "ar",
+      });
+    } catch (e) {
+      res.status(400).json({ ok: false, error: e.message });
+    }
+  });
+
   function escapeHtml(s) {
     return String(s || "")
       .replace(/&/g, "&amp;")
@@ -526,9 +579,14 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
 #paypal-buttons{min-height:140px;margin-top:.6rem}
 .msg{margin-top:.9rem;color:#b91c1c;font-size:.88rem;display:none}
 .foot{margin-top:1rem;text-align:center;color:#888;font-size:.78rem}
+.resume{display:none;margin-top:.85rem;width:100%;border:0;border-radius:12px;padding:.9rem 1rem;background:#0f766e;color:#fff;font-weight:700;font-size:.95rem;cursor:pointer}
+.resume.show{display:block}
+.overlay{display:none;position:fixed;inset:0;background:rgba(11,18,32,.72);z-index:99;place-items:center;color:#fff;font-weight:700;font-size:1.05rem;padding:1.5rem;text-align:center}
+.overlay.show{display:grid}
 </style>
 <script src="https://www.paypal.com/sdk/js?client-id=${clientId}&currency=USD&intent=capture&components=buttons&enable-funding=venmo,paylater,card"></script>
 </head><body>
+<div class="overlay" id="payOverlay">جاري تأكيد الدفع...</div>
 <div class="wrap">
   <div class="topbar">
     <div class="top"><span class="amt">${amountLabel} USD</span><span class="name">${safeName}</span></div>
@@ -543,6 +601,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     <p class="sub"><span data-i18n="user"></span> @${safeUser}</p>
     <p class="sub" data-i18n="payOpts"></p>
     <div id="paypal-buttons"></div>
+    <button type="button" class="resume" id="resumeBtn" data-i18n="resume"></button>
     <p class="msg" id="err"></p>
   </div>
   <p class="foot" data-i18n="foot"></p>
@@ -554,6 +613,8 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
   var discordUser = ${JSON.stringify(String(discordUser || "").replace(/^@+/, ""))};
   var discordId = ${JSON.stringify(String(discordId || ""))};
   var err = document.getElementById('err');
+  var overlay = document.getElementById('payOverlay');
+  var resumeBtn = document.getElementById('resumeBtn');
   var I18N = {
     ar: {
       title: "موجز الطلب",
@@ -562,11 +623,14 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       id: "كوبي يوزر:",
       payOpts: "خيارات الدفع الإلكتروني السريع",
       foot: "مدعوم من PayPal · 𝐂𝐨𝐝𝐞𝐗",
+      resume: "دفعت؟ اضغط هنا لإظهار صفحة النجاح",
+      confirming: "جاري تأكيد الدفع...",
       fail: "فشل الدفع",
       createFail: "تعذر إنشاء الطلب",
       captureFail: "تعذر تأكيد الدفع",
       errPay: "حدث خطأ أثناء الدفع",
-      cancel: "تم إلغاء الدفع"
+      cancel: "تم إلغاء الدفع",
+      notPaidYet: "ما تم تأكيد الدفع بعد. إذا خصموا المبلغ انتظر ثواني واضغط مرة ثانية."
     },
     en: {
       title: "Order summary",
@@ -575,11 +639,14 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       id: "Copy User ID:",
       payOpts: "Express checkout options",
       foot: "Powered by PayPal · 𝐂𝐨𝐝𝐞𝐗",
+      resume: "Already paid? Tap here for the success page",
+      confirming: "Confirming payment...",
       fail: "Payment failed",
       createFail: "Could not create the order",
       captureFail: "Could not confirm payment",
       errPay: "Something went wrong during payment",
-      cancel: "Payment cancelled"
+      cancel: "Payment cancelled",
+      notPaidYet: "Payment not confirmed yet. If you were charged, wait a few seconds and try again."
     }
   };
   var lang = localStorage.getItem("codex_pay_lang") || ${JSON.stringify(initialLang)};
@@ -596,22 +663,72 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       var k = el.getAttribute("data-i18n");
       if (t()[k] != null) el.textContent = t()[k];
     });
+    if (overlay && overlay.classList.contains('show')) overlay.textContent = t().confirming;
   }
   document.getElementById("btn-ar").addEventListener("click", function(){ apply("ar"); });
   document.getElementById("btn-en").addEventListener("click", function(){ apply("en"); });
   apply(lang);
 
   function showErr(msg){ err.style.display='block'; err.textContent=msg||t().fail; }
-  function successUrl(orderId){
+  function successUrl(orderId, meta){
+    var m = meta || {};
     var q = new URLSearchParams({
-      amount: amount,
-      name: name,
-      user: discordUser,
-      lang: lang
+      amount: m.amount || amount,
+      name: m.name || name,
+      user: m.user || discordUser,
+      lang: m.lang || lang
     });
     if (orderId) q.set('token', orderId);
-    return '/pay/success?' + q.toString();
+    // Absolute URL — critical for mobile WebViews / PayPal returns
+    return location.origin + '/pay/success?' + q.toString();
   }
+  function savePending(orderId){
+    try {
+      localStorage.setItem('codex_pending_order', String(orderId || ''));
+      sessionStorage.setItem('codex_pay_meta', JSON.stringify({
+        amount: amount, name: name, user: discordUser, lang: lang, orderId: orderId
+      }));
+    } catch (e) {}
+  }
+  function pendingId(){
+    try { return localStorage.getItem('codex_pending_order') || ''; } catch (e) { return ''; }
+  }
+  function clearPending(){
+    try { localStorage.removeItem('codex_pending_order'); } catch (e) {}
+  }
+  function goSuccess(orderId, meta){
+    clearPending();
+    var url = successUrl(orderId, meta);
+    try { window.top.location.replace(url); } catch (e1) {
+      try { window.location.replace(url); } catch (e2) { window.location.href = url; }
+    }
+  }
+  function checkPaid(orderId, opts){
+    var id = orderId || pendingId();
+    if (!id) return Promise.resolve(false);
+    if (opts && opts.overlay) {
+      overlay.textContent = t().confirming;
+      overlay.classList.add('show');
+    }
+    return fetch('/paypal/status?id=' + encodeURIComponent(id), { cache: 'no-store' })
+      .then(function(r){ return r.json().catch(function(){ return {}; }); })
+      .then(function(j){
+        if (j && j.paid) {
+          goSuccess(id, j);
+          return true;
+        }
+        overlay.classList.remove('show');
+        if (opts && opts.showResume) resumeBtn.classList.add('show');
+        if (opts && opts.errorIfNot) showErr(t().notPaidYet);
+        return false;
+      })
+      .catch(function(){
+        overlay.classList.remove('show');
+        if (opts && opts.showResume) resumeBtn.classList.add('show');
+        return false;
+      });
+  }
+
   try {
     sessionStorage.setItem('codex_pay_meta', JSON.stringify({
       amount: amount, name: name, user: discordUser, lang: lang
@@ -632,18 +749,19 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify(createOrderPayload())
-    }).then(function(r){ return r.json().then(function(j){ if(!r.ok||!j.id) throw new Error(j.error||t().createFail); return j.id; }); });
+    }).then(function(r){ return r.json().then(function(j){
+      if(!r.ok||!j.id) throw new Error(j.error||t().createFail);
+      savePending(j.id);
+      resumeBtn.classList.add('show');
+      return j.id;
+    }); });
   }
   function onApprove(data, actions){
-    var orderId = (data && data.orderID) || '';
-    var url = successUrl(orderId);
-    function go(){
-      try { window.top.location.replace(url); } catch (e1) {
-        try { window.location.replace(url); } catch (e2) {
-          window.location.href = url;
-        }
-      }
-    }
+    var orderId = (data && data.orderID) || pendingId() || '';
+    savePending(orderId);
+    overlay.textContent = t().confirming;
+    overlay.classList.add('show');
+    function go(){ goSuccess(orderId); }
     var capturePromise =
       actions && actions.order && typeof actions.order.capture === 'function'
         ? actions.order.capture().catch(function(){
@@ -660,23 +778,41 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
             body: JSON.stringify({ orderID: orderId }),
             keepalive: true
           });
-    setTimeout(go, 800);
+    setTimeout(go, 600);
     return Promise.resolve(capturePromise).then(go, go);
   }
-  function onError(e){ showErr((e&&e.message)||t().errPay); }
-  function onCancel(){ showErr(t().cancel); }
+  function onError(e){ overlay.classList.remove('show'); showErr((e&&e.message)||t().errPay); }
+  function onCancel(){ overlay.classList.remove('show'); showErr(t().cancel); }
 
-  // Any PayPal return that lands on /pay with a token → success
+  // PayPal return with token in URL
   try {
     var params = new URLSearchParams(location.search);
     var retToken = params.get('token') || params.get('orderID');
     if (retToken) {
-      window.location.replace(successUrl(retToken));
+      savePending(retToken);
+      goSuccess(retToken);
       return;
     }
   } catch (e) {}
 
-  // Same Smart Buttons on mobile + desktop (PayPal + Debit/Credit Card)
+  // If buyer already paid and got bounced back to checkout, auto-detect
+  if (pendingId()) {
+    resumeBtn.classList.add('show');
+    checkPaid(pendingId(), { overlay: true, showResume: true });
+  }
+  document.addEventListener('visibilitychange', function(){
+    if (document.visibilityState === 'visible' && pendingId()) {
+      checkPaid(pendingId(), { overlay: true, showResume: true });
+    }
+  });
+  window.addEventListener('pageshow', function(){
+    if (pendingId()) checkPaid(pendingId(), { overlay: true, showResume: true });
+  });
+  resumeBtn.addEventListener('click', function(){
+    checkPaid(pendingId(), { overlay: true, showResume: true, errorIfNot: true });
+  });
+
+  // Keep PayPal + Debit/Credit Card on mobile and desktop
   if (window.paypal && paypal.Buttons) {
     paypal.Buttons({
       style: { layout:'vertical', color:'gold', shape:'rect', label:'paypal', height:48 },
