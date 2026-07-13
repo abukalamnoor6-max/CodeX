@@ -197,17 +197,22 @@ export function createPanelApp({
       }
       const order = await paypalPayments.getOrder(orderId);
       const status = String(order?.status || "");
-      const captured = order?.purchase_units?.some((u) =>
-        u.payments?.captures?.some((c) =>
-          ["COMPLETED", "PENDING"].includes(String(c.status || "")),
-        ),
+      const captures =
+        order?.purchase_units?.flatMap((u) => u.payments?.captures || []) ||
+        [];
+      const captureCompleted = captures.some(
+        (c) => String(c.status || "") === "COMPLETED",
       );
-      const paid =
-        status === "COMPLETED" ||
-        status === "APPROVED" ||
-        Boolean(captured);
-      // Don't block status response on capture — success page settles it
-      if (paid && status === "APPROVED") {
+      const captureDenied = captures.some((c) =>
+        /DECLINED|DENIED|FAILED|VOIDED/i.test(String(c.status || "")),
+      );
+      // APPROVED alone is not paid — card can still decline on capture
+      const paid = status === "COMPLETED" || captureCompleted;
+      const denied =
+        captureDenied ||
+        /VOIDED|EXPIRED/i.test(status) ||
+        (!paid && /COMPLETED|APPROVED/.test(status) === false && captures.length > 0);
+      if (status === "APPROVED" && !paid && !denied) {
         paypalPayments.captureOrder(orderId).catch(() => {});
       }
       const saved = takePayMeta(orderId) || {};
@@ -223,6 +228,7 @@ export function createPanelApp({
       res.json({
         ok: true,
         paid,
+        denied,
         status,
         id: orderId,
         amount:
@@ -627,6 +633,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       captureFail: "تعذر تأكيد الدفع",
       errPay: "حدث خطأ أثناء الدفع",
       cancel: "تم إلغاء الدفع",
+      declined: "تم رفض الدفع. ما تم خصم المبلغ — جرّب بطاقة ثانية أو PayPal.",
       notPaidYet: "ما تم تأكيد الدفع بعد. إذا خصموا المبلغ انتظر ثواني واضغط مرة ثانية."
     },
     en: {
@@ -643,6 +650,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       captureFail: "Could not confirm payment",
       errPay: "Something went wrong during payment",
       cancel: "Payment cancelled",
+      declined: "Payment declined. You were not charged — try another card or PayPal.",
       notPaidYet: "Payment not confirmed yet. If you were charged, wait a few seconds and try again."
     }
   };
@@ -743,6 +751,11 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       }
       hideOverlay();
       if (opts && opts.showResume) resumeBtn.classList.add('show');
+      if (j && j.denied) {
+        clearPending();
+        showErr(t().declined);
+        return false;
+      }
       if (opts && opts.errorIfNot) showErr(t().notPaidYet);
       return false;
     });
@@ -779,30 +792,58 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     var orderId = (data && data.orderID) || pendingId() || '';
     savePending(orderId);
     showOverlay();
-    // Don't wait on capture — go to success immediately on mobile
-    setTimeout(function(){ goSuccess(orderId); }, 300);
-    try {
-      if (actions && actions.order && typeof actions.order.capture === 'function') {
-        actions.order.capture().catch(function(){
-          fetch('/paypal/capture', {
+    function failDeclined(msg){
+      hideOverlay();
+      showErr(msg || t().declined);
+    }
+    function afterCapture(details){
+      var st = String((details && details.status) || '');
+      if (st === 'COMPLETED') {
+        goSuccess(orderId);
+        return;
+      }
+      // Inspect capture units for decline
+      try {
+        var caps = (((details || {}).purchase_units || [])[0] || {}).payments || {};
+        var list = caps.captures || [];
+        var bad = list.some(function(c){ return /DECLINED|DENIED|FAILED/i.test(String(c.status||'')); });
+        var good = list.some(function(c){ return String(c.status||'') === 'COMPLETED'; });
+        if (good) { goSuccess(orderId); return; }
+        if (bad) { failDeclined(t().declined); return; }
+      } catch (e) {}
+      // Fallback: ask server (COMPLETED only)
+      checkPaid(orderId, { overlay: true, showResume: true, errorIfNot: true });
+    }
+    var p =
+      actions && actions.order && typeof actions.order.capture === 'function'
+        ? actions.order.capture()
+        : fetch('/paypal/capture', {
             method:'POST',
             headers:{'Content-Type':'application/json'},
             body: JSON.stringify({ orderID: orderId }),
             keepalive: true
-          }).catch(function(){});
-        });
-      } else {
-        fetch('/paypal/capture', {
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ orderID: orderId }),
-          keepalive: true
-        }).catch(function(){});
+          }).then(function(r){ return r.json(); });
+    // Safety timeout so overlay never hangs
+    setTimeout(function(){
+      if (overlay.classList.contains('show')) {
+        checkPaid(orderId, { overlay: true, showResume: true });
       }
-    } catch (e) {}
-    return Promise.resolve();
+    }, 10000);
+    return Promise.resolve(p).then(afterCapture).catch(function(e){
+      var msg = (e && (e.message || e)) || '';
+      if (/INSTRUMENT_DECLINED|DECLINED|DENIED|FAILED|CARD/i.test(String(msg))) {
+        failDeclined(t().declined);
+        return;
+      }
+      // Network blip: verify with server instead of fake-success
+      checkPaid(orderId, { overlay: true, showResume: true, errorIfNot: true });
+    });
   }
-  function onError(e){ hideOverlay(); showErr((e&&e.message)||t().errPay); }
+  function onError(e){
+    hideOverlay();
+    var msg = (e && e.message) || '';
+    showErr(/declin|denied|instrument/i.test(String(msg)) ? t().declined : (msg || t().errPay));
+  }
   function onCancel(){ hideOverlay(); showErr(t().cancel); }
 
   // PayPal return with token in URL
