@@ -210,12 +210,6 @@ function findExistingLogChannel(guild, type, preferredParentId = null) {
   return scored[0]?.c || null;
 }
 
-function memberRoleIds(member) {
-  const raw = member?._roles;
-  if (Array.isArray(raw) && raw.length) return new Set(raw.map(String));
-  return new Set([...(member?.roles?.cache?.keys?.() || [])].map(String));
-}
-
 /**
  * يربط رومات اللوقات الموجودة بالـ IDs (بدون إنشاء رومات جديدة).
  * يحل مشكلة اختفاء log-rooms.json على Railway.
@@ -277,6 +271,11 @@ async function getCh(client, guildId, type) {
   g.channels[type] = found.id;
   saveStore(data);
   return found;
+}
+
+/** للـ Guard وغيره: جلب روم لوق CodeX بالاسم/الـ ID */
+export async function getCodexLogChannel(client, guildId, type) {
+  return getCh(client, guildId, type);
 }
 
 async function send(ch, payload) {
@@ -422,253 +421,46 @@ export function attachCodexLogs(client, { guildId, ownerId }) {
     if (MESSAGE_LOG_IGNORE_CHANNELS.has(msg.channelId)) return;
     const ch = await getCh(client, msg.guild.id, "allmessages");
     if (!ch) return;
+    const when = new Date().toLocaleString("en-US", {
+      timeZone: "Asia/Riyadh",
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
     const e = new EmbedBuilder()
-      .setAuthor({
-        name: "💬 رسالة جديدة",
-        iconURL: msg.author.displayAvatarURL(),
-      })
-      .setColor(COLORS.blue)
-      .addFields(
-        {
-          name: "👤",
-          value: `${msg.author}\n\`${msg.author.tag}\``,
-          inline: true,
-        },
-        { name: "📍", value: `${msg.channel}`, inline: true },
-        { name: "📝", value: msg.content?.slice(0, 1000) || "فارغ" },
+      .setColor(0xed4245)
+      .setTitle(`💬 رسالة جديدة في #${msg.channel?.name || "روم"} !`)
+      .setDescription(
+        [
+          "**صاحب الرسالة**",
+          `الشخص: <@${msg.author.id}>`,
+          `اسم الشخص: \`${msg.author.username}\``,
+          `مُعرّف الشخص: \`${msg.author.id}\``,
+          "",
+          "**معلومات الرسالة**",
+          `\`${(msg.content || "—").slice(0, 900)}\``,
+          "",
+          "**الروم**",
+          `الروم: <#${msg.channelId}>`,
+          "",
+          "**التوقيت**",
+          `\`${when}\``,
+        ].join("\n"),
       )
+      .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Messages" })
       .setTimestamp();
     await send(ch, { embeds: [e] });
   });
 
-  client.on("messageDelete", async (msg) => {
-    if (!msg.guild || msg.author?.bot || msg.guild.id !== guildId) return;
-    if (MESSAGE_LOG_IGNORE_CHANNELS.has(msg.channelId)) return;
-    const ch = await getCh(client, msg.guild.id, "messages");
-    if (!ch) return;
-    await send(ch, {
-      embeds: [
-        new EmbedBuilder()
-          .setAuthor({ name: "🗑️ رسالة محذوفة" })
-          .setColor(COLORS.red)
-          .addFields(
-            {
-              name: "👤",
-              value: `${msg.author || "؟"}\n\`${msg.author?.tag || "؟"}\``,
-              inline: true,
-            },
-            { name: "📍", value: `${msg.channel}`, inline: true },
-            { name: "📝", value: msg.content?.slice(0, 1000) || "فارغ" },
-          )
-          .setTimestamp(),
-      ],
-    });
-  });
-
-  client.on("messageUpdate", async (oldMsg, newMsg) => {
-    if (
-      !oldMsg.guild ||
-      oldMsg.guild.id !== guildId ||
-      oldMsg.author?.bot ||
-      oldMsg.content === newMsg.content
-    )
-      return;
-    if (MESSAGE_LOG_IGNORE_CHANNELS.has(oldMsg.channelId)) return;
-    const ch = await getCh(client, oldMsg.guild.id, "messages");
-    if (!ch) return;
-    await send(ch, {
-      embeds: [
-        new EmbedBuilder()
-          .setAuthor({ name: "✏️ رسالة معدلة" })
-          .setColor(COLORS.gold)
-          .addFields(
-            { name: "👤", value: `${oldMsg.author}`, inline: true },
-            { name: "قبل", value: oldMsg.content?.slice(0, 500) || "فارغ" },
-            { name: "بعد", value: newMsg.content?.slice(0, 500) || "فارغ" },
-          )
-          .setTimestamp(),
-      ],
-    });
-  });
-
-  client.on("messageDeleteBulk", async (msgs) => {
-    const first = msgs.first();
-    if (!first?.guild || first.guild.id !== guildId) return;
-    if (MESSAGE_LOG_IGNORE_CHANNELS.has(first.channelId)) return;
-    const ch = await getCh(client, first.guild.id, "messages");
-    if (!ch) return;
-    const entry = await audit(first.guild, AuditLogEvent.MessageBulkDelete);
-    const embed = new EmbedBuilder()
-      .setAuthor({ name: "⚠️ حذف جماعي" })
-      .setColor(COLORS.danger)
-      .addFields(
-        { name: "العدد", value: `\`${msgs.size}\``, inline: true },
-        { name: "الروم", value: `${first.channel}`, inline: true },
-      )
-      .setTimestamp();
-    await send(
-      ch,
-      entry?.executor
-        ? { embeds: [embed], components: actionMenu(entry.executor.id) }
-        : { embeds: [embed] },
-    );
-  });
-
-  client.on("guildMemberAdd", async (member) => {
-    if (member.guild.id !== guildId) return;
-    const ch = await getCh(client, member.guild.id, "members");
-    if (!ch) return;
-    const age = Math.floor(
-      (Date.now() - member.user.createdTimestamp) / 86400000,
-    );
-    const embed = new EmbedBuilder()
-      .setAuthor({
-        name: age < 7 ? "⚠️ عضو مشبوه" : "📥 عضو جديد",
-        iconURL: member.displayAvatarURL(),
-      })
-      .setColor(age < 7 ? COLORS.danger : COLORS.green)
-      .setThumbnail(member.displayAvatarURL({ size: 256 }))
-      .addFields(
-        {
-          name: "👤",
-          value: `${member}\n\`${member.user.tag}\``,
-          inline: true,
-        },
-        { name: "العمر", value: `\`${age}\` يوم`, inline: true },
-        { name: "الحساب", value: t(member.user.createdAt), inline: true },
-      )
-      .setTimestamp();
-    await send(
-      ch,
-      age < 7
-        ? { embeds: [embed], components: actionMenu(member.id) }
-        : { embeds: [embed] },
-    );
-  });
-
-  client.on("guildMemberRemove", async (member) => {
-    if (member.guild.id !== guildId) return;
-    const ch = await getCh(client, member.guild.id, "members");
-    if (!ch) return;
-    const roles =
-      member.roles?.cache
-        ?.filter((r) => r.name !== "@everyone")
-        .map((r) => `${r}`)
-        .join(" ") || "لا يوجد";
-    await send(ch, {
-      embeds: [
-        new EmbedBuilder()
-          .setAuthor({ name: "📤 عضو غادر" })
-          .setColor(COLORS.red)
-          .addFields(
-            { name: "👤", value: `\`${member.user?.tag}\``, inline: true },
-            { name: "🆔", value: `\`${member.id}\``, inline: true },
-            { name: "الرتب", value: roles.slice(0, 900) },
-          )
-          .setTimestamp(),
-      ],
-    });
-  });
+  // حذف/تعديل الرسائل + الرتب + الألقاب + الرومات + الدخول/الخروج + الحظر
+  // تُدار بستايل Nova التفصيلي من guard.mjs → رومات CodeX
 
   client.on("guildMemberUpdate", async (oldM, newM) => {
     if (newM.guild.id !== guildId) return;
-    const oldRoles = memberRoleIds(oldM);
-    const newRoles = memberRoleIds(newM);
-    const addedIds = [...newRoles].filter((id) => !oldRoles.has(id));
-    const removedIds = [...oldRoles].filter((id) => !newRoles.has(id));
-    if (addedIds.length || removedIds.length) {
-      const ch = await getCh(client, newM.guild.id, "roles");
-      if (ch) {
-        const entry = await audit(
-          newM.guild,
-          AuditLogEvent.MemberRoleUpdate,
-          newM.id,
-        );
-        const resolveRole = (id) =>
-          newM.guild.roles.cache.get(id) ||
-          oldM.roles?.cache?.get?.(id) ||
-          null;
-        if (addedIds.length) {
-          const addedRoles = addedIds.map(resolveRole).filter(Boolean);
-          const danger = addedRoles.some((r) =>
-            r.permissions.has(PermissionFlagsBits.Administrator),
-          );
-          const embed = new EmbedBuilder()
-            .setAuthor({ name: danger ? "⚠️ رتبة خطيرة" : "➕ رتبة" })
-            .setColor(danger ? COLORS.danger : COLORS.green)
-            .addFields(
-              { name: "👤", value: `${newM}`, inline: true },
-              {
-                name: "🎭",
-                value:
-                  addedRoles.map((r) => `${r}`).join("\n") ||
-                  addedIds.map((id) => `<@&${id}>`).join("\n"),
-                inline: true,
-              },
-              ...(entry?.executor
-                ? [{ name: "👮", value: `${entry.executor}`, inline: true }]
-                : []),
-            )
-            .setTimestamp();
-          await send(
-            ch,
-            danger
-              ? { embeds: [embed], components: actionMenu(newM.id) }
-              : { embeds: [embed] },
-          );
-        }
-        if (removedIds.length) {
-          const removedRoles = removedIds.map(resolveRole).filter(Boolean);
-          await send(ch, {
-            embeds: [
-              new EmbedBuilder()
-                .setAuthor({ name: "➖ رتبة مسحوبة" })
-                .setColor(COLORS.orange)
-                .addFields(
-                  { name: "👤", value: `${newM}`, inline: true },
-                  {
-                    name: "🎭",
-                    value:
-                      removedRoles.map((r) => `${r}`).join("\n") ||
-                      removedIds.map((id) => `<@&${id}>`).join("\n"),
-                    inline: true,
-                  },
-                  ...(entry?.executor
-                    ? [{ name: "👮", value: `${entry.executor}`, inline: true }]
-                    : []),
-                )
-                .setTimestamp(),
-            ],
-          });
-        }
-      }
-    }
-    if (oldM.nickname !== newM.nickname) {
-      const ch = await getCh(client, newM.guild.id, "nicknames");
-      if (ch) {
-        await send(ch, {
-          embeds: [
-            new EmbedBuilder()
-              .setAuthor({ name: "✏️ لقب" })
-              .setColor(COLORS.purple)
-              .addFields(
-                { name: "👤", value: `${newM}`, inline: true },
-                {
-                  name: "قبل",
-                  value: `\`${oldM.nickname || oldM.user.username}\``,
-                  inline: true,
-                },
-                {
-                  name: "بعد",
-                  value: `\`${newM.nickname || newM.user.username}\``,
-                  inline: true,
-                },
-              )
-              .setTimestamp(),
-          ],
-        });
-      }
-    }
     if (
       oldM.communicationDisabledUntil !== newM.communicationDisabledUntil &&
       newM.communicationDisabledUntil
@@ -683,116 +475,47 @@ export function attachCodexLogs(client, { guildId, ownerId }) {
         const mins = Math.round(
           (newM.communicationDisabledUntil - Date.now()) / 60000,
         );
+        const when = new Date().toLocaleString("en-US", {
+          timeZone: "Asia/Riyadh",
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+          hour12: true,
+        });
         await send(ch, {
           embeds: [
             new EmbedBuilder()
-              .setAuthor({ name: "⏱️ تايم آوت" })
-              .setColor(COLORS.orange)
-              .addFields(
-                { name: "👤", value: `${newM}`, inline: true },
-                { name: "المدة", value: `${mins} دقيقة`, inline: true },
-                { name: "السبب", value: entry?.reason || "بدون" },
+              .setColor(0xed4245)
+              .setTitle("⏱️ تم إعطاء تايم آوت لعضو في 𝐂𝐨𝐝𝐞𝐗 .")
+              .setDescription(
+                [
+                  "**معلومات العضو**",
+                  `العضو: <@${newM.id}>`,
+                  `اسم العضو: \`${newM.id}\``,
+                  "",
+                  "**المدة**",
+                  `\`${mins} دقيقة\``,
+                  "",
+                  "**تم بواسطة**",
+                  `الادمن: ${entry?.executor ? `<@${entry.executor.id}>` : "غير معروف"}`,
+                  `مُعرّف الادمن: ${entry?.executor ? `\`${entry.executor.id}\`` : "—"}`,
+                  "",
+                  "**السبب**",
+                  entry?.reason || "لم يتم تقديم سبب",
+                  "",
+                  "**وقت التحديث**",
+                  `\`${when}\``,
+                ].join("\n"),
               )
+              .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Moderation" })
               .setTimestamp(),
           ],
         });
       }
     }
-  });
-
-  client.on("roleCreate", async (role) => {
-    if (role.guild.id !== guildId) return;
-    const ch = await getCh(client, role.guild.id, "roles");
-    if (!ch) return;
-    const entry = await audit(role.guild, AuditLogEvent.RoleCreate, role.id);
-    const danger = role.permissions.has(PermissionFlagsBits.Administrator);
-    const embed = new EmbedBuilder()
-      .setAuthor({ name: danger ? "⚠️ رتبة خطيرة" : "➕ رتبة جديدة" })
-      .setColor(danger ? COLORS.danger : COLORS.green)
-      .addFields(
-        { name: "🎭", value: `${role}`, inline: true },
-        ...(entry?.executor
-          ? [{ name: "👤", value: `${entry.executor}`, inline: true }]
-          : []),
-      )
-      .setTimestamp();
-    await send(
-      ch,
-      danger && entry?.executor
-        ? { embeds: [embed], components: actionMenu(entry.executor.id) }
-        : { embeds: [embed] },
-    );
-  });
-
-  client.on("roleDelete", async (role) => {
-    if (role.guild.id !== guildId) return;
-    const ch = await getCh(client, role.guild.id, "roles");
-    if (!ch) return;
-    const entry = await audit(role.guild, AuditLogEvent.RoleDelete);
-    await send(ch, {
-      embeds: [
-        new EmbedBuilder()
-          .setAuthor({ name: "🗑️ رتبة محذوفة" })
-          .setColor(COLORS.danger)
-          .addFields(
-            { name: "🎭", value: `\`${role.name}\``, inline: true },
-            ...(entry?.executor
-              ? [{ name: "👤", value: `${entry.executor}`, inline: true }]
-              : []),
-          )
-          .setTimestamp(),
-      ],
-      components: entry?.executor ? actionMenu(entry.executor.id) : [],
-    });
-  });
-
-  client.on("channelCreate", async (channel) => {
-    if (!channel.guild || channel.guild.id !== guildId) return;
-    const ch = await getCh(client, channel.guild.id, "channels");
-    if (!ch) return;
-    const entry = await audit(
-      channel.guild,
-      AuditLogEvent.ChannelCreate,
-      channel.id,
-    );
-    await send(ch, {
-      embeds: [
-        new EmbedBuilder()
-          .setAuthor({ name: "➕ روم جديد" })
-          .setColor(COLORS.green)
-          .addFields(
-            { name: "📍", value: `${channel}`, inline: true },
-            ...(entry?.executor
-              ? [{ name: "👤", value: `${entry.executor}`, inline: true }]
-              : []),
-          )
-          .setTimestamp(),
-      ],
-    });
-  });
-
-  client.on("channelDelete", async (channel) => {
-    if (!channel.guild || channel.guild.id !== guildId) return;
-    const { g } = guildCfg(channel.guild.id);
-    if (Object.values(g.channels || {}).includes(channel.id)) return;
-    const ch = await getCh(client, channel.guild.id, "channels");
-    if (!ch) return;
-    const entry = await audit(channel.guild, AuditLogEvent.ChannelDelete);
-    await send(ch, {
-      embeds: [
-        new EmbedBuilder()
-          .setAuthor({ name: "🗑️ روم محذوف" })
-          .setColor(COLORS.danger)
-          .addFields(
-            { name: "📍", value: `\`${channel.name}\``, inline: true },
-            ...(entry?.executor
-              ? [{ name: "👤", value: `${entry.executor}`, inline: true }]
-              : []),
-          )
-          .setTimestamp(),
-      ],
-      components: entry?.executor ? actionMenu(entry.executor.id) : [],
-    });
   });
 
   client.on("webhooksUpdate", async (channel) => {
@@ -827,61 +550,6 @@ export function attachCodexLogs(client, { guildId, ownerId }) {
     } catch {
       /* ignore */
     }
-  });
-
-  client.on("guildBanAdd", async (ban) => {
-    if (ban.guild.id !== guildId) return;
-    const ch = await getCh(client, ban.guild.id, "moderation");
-    if (!ch) return;
-    const entry = await audit(
-      ban.guild,
-      AuditLogEvent.MemberBanAdd,
-      ban.user.id,
-    );
-    await send(ch, {
-      embeds: [
-        new EmbedBuilder()
-          .setAuthor({ name: "🔨 حظر" })
-          .setColor(COLORS.danger)
-          .addFields(
-            {
-              name: "👤",
-              value: `${ban.user.tag}\n\`${ban.user.id}\``,
-              inline: true,
-            },
-            { name: "السبب", value: entry?.reason || "بدون" },
-            ...(entry?.executor
-              ? [{ name: "👮", value: `${entry.executor}`, inline: true }]
-              : []),
-          )
-          .setTimestamp(),
-      ],
-    });
-  });
-
-  client.on("guildBanRemove", async (ban) => {
-    if (ban.guild.id !== guildId) return;
-    const ch = await getCh(client, ban.guild.id, "moderation");
-    if (!ch) return;
-    const entry = await audit(
-      ban.guild,
-      AuditLogEvent.MemberBanRemove,
-      ban.user.id,
-    );
-    await send(ch, {
-      embeds: [
-        new EmbedBuilder()
-          .setAuthor({ name: "♻️ فك حظر" })
-          .setColor(COLORS.green)
-          .addFields(
-            { name: "👤", value: `${ban.user.tag}`, inline: true },
-            ...(entry?.executor
-              ? [{ name: "👮", value: `${entry.executor}`, inline: true }]
-              : []),
-          )
-          .setTimestamp(),
-      ],
-    });
   });
 
   client.on("autoModerationActionExecution", async (exec) => {

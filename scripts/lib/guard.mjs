@@ -121,6 +121,21 @@ function takeBucket(map, key, windowMs) {
   return arr.length;
 }
 
+/** مفاتيح Guard → أنواع رومات CodeX العربية */
+const GUARD_TO_CODEX = {
+  roles: "roles",
+  nicknames: "nicknames",
+  permissions: "channels",
+  rooms: "channels",
+  chat: "messages",
+  join: "members",
+  left: "members",
+  ban: "moderation",
+  important: "admin",
+  general: "admin",
+  tickets: "messages",
+};
+
 async function sendLog(client, key, embed) {
   // روم اللوق من لوحة التحكم (إن وُجد)
   const customId =
@@ -139,7 +154,22 @@ async function sendLog(client, key, embed) {
     }
   }
 
-  // اللوقات القديمة تتعطّل إذا شغّال نظام اللوقات الكامل
+  // نظام اللوقات الكامل: أرسل بستايل Nova على رومات CodeX العربية
+  const codexType = GUARD_TO_CODEX[key];
+  if (process.env.DISABLE_GUARD_LOGS === "1" && codexType) {
+    try {
+      const { getCodexLogChannel } = await import("./codex-logs.mjs");
+      const ch = await getCodexLogChannel(client, GUILD_ID, codexType);
+      if (ch?.isTextBased?.()) {
+        await ch.send({ embeds: [embed] });
+        return;
+      }
+    } catch (e) {
+      console.warn("codex log route fail", key, e.message);
+    }
+    return;
+  }
+
   if (process.env.DISABLE_GUARD_LOGS === "1") return;
   const id = LOG_CHANNELS[key];
   if (!id) return;
@@ -226,6 +256,38 @@ function formatPermBits(bitfield) {
   } catch {
     return String(bitfield || "—");
   }
+}
+
+/** فرق الصلاحيات بصيغة Nova: `+ ViewChannel` / `- ViewChannel` */
+function formatPermDelta(oldAllow, newAllow, oldDeny, newDeny) {
+  const lines = [];
+  try {
+    const oA = new PermissionsBitField(BigInt(oldAllow || 0));
+    const nA = new PermissionsBitField(BigInt(newAllow || 0));
+    const oD = new PermissionsBitField(BigInt(oldDeny || 0));
+    const nD = new PermissionsBitField(BigInt(newDeny || 0));
+    for (const p of nA.toArray()) {
+      if (!oA.has(p)) lines.push(`\`+ ${p}\``);
+    }
+    for (const p of oA.toArray()) {
+      if (!nA.has(p)) lines.push(`\`- ${p}\``);
+    }
+    for (const p of nD.toArray()) {
+      if (!oD.has(p)) lines.push(`\`- ${p}\``);
+    }
+    for (const p of oD.toArray()) {
+      if (!nD.has(p)) lines.push(`\`+ ${p}\``);
+    }
+  } catch {
+    /* ignore */
+  }
+  if (!lines.length) {
+    return [
+      `السماح: \`${formatPermBits(newAllow)}\``,
+      `المنع: \`${formatPermBits(newDeny)}\``,
+    ];
+  }
+  return lines.slice(0, 20);
 }
 
 function diffOverwrites(oldCh, newCh) {
@@ -886,10 +948,10 @@ export function attachGuard(client, options = {}) {
 
       await sendLog(
         client,
-        "roles",
+        "nicknames",
         new EmbedBuilder()
           .setColor(0xed4245)
-          .setTitle("✏️ تم تحديث اسم اللقب لعضو في 𝐂𝐨𝐝𝐞𝐗")
+          .setTitle("✏️ تم تحديث اسم اللقب لعضو في 𝐂𝐨𝐝𝐞𝐗 .")
           .setDescription(
             [
               memberBlock,
@@ -902,10 +964,10 @@ export function attachGuard(client, options = {}) {
               "",
               "**تم التحديث بواسطة**",
               `الادمن: ${admin ? `<@${admin.id}>` : "غير معروف"}`,
-              `معرّف الادمن: ${admin ? `(${admin.id})` : "—"}`,
+              `مُعرّف الادمن: ${admin ? `\`${admin.id}\`` : "—"}`,
               "",
               "**وقت التحديث**",
-              when(),
+              `\`${when()}\``,
             ].join("\n"),
           )
           .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Nickname" })
@@ -915,7 +977,29 @@ export function attachGuard(client, options = {}) {
 
     const added = newM.roles.cache.filter((r) => !oldM.roles.cache.has(r.id));
     const removed = oldM.roles.cache.filter((r) => !newM.roles.cache.has(r.id));
-    if (!added.size && !removed.size) return;
+    // fallback عبر _roles لو الكاش ناقص
+    let addedList = [...added.values()];
+    let removedList = [...removed.values()];
+    if (!addedList.length && !removedList.length) {
+      const oldIds = new Set(
+        (oldM._roles || [...oldM.roles.cache.keys()]).map(String),
+      );
+      const newIds = new Set(
+        (newM._roles || [...newM.roles.cache.keys()]).map(String),
+      );
+      addedList = [...newIds]
+        .filter((id) => !oldIds.has(id))
+        .map((id) => newM.guild.roles.cache.get(id))
+        .filter(Boolean);
+      removedList = [...oldIds]
+        .filter((id) => !newIds.has(id))
+        .map(
+          (id) =>
+            oldM.roles.cache.get(id) || newM.guild.roles.cache.get(id),
+        )
+        .filter(Boolean);
+    }
+    if (!addedList.length && !removedList.length) return;
 
     const audit = await getExecutor(
       newM.guild,
@@ -930,16 +1014,16 @@ export function attachGuard(client, options = {}) {
       [
         `**${label}**`,
         `الادمن: ${admin ? `<@${admin.id}>` : "غير معروف"}`,
-        `معرّف الادمن: ${admin ? `(${admin.id})` : "—"}`,
+        `مُعرّف الادمن: ${admin ? `\`${admin.id}\`` : "—"}`,
       ].join("\n");
 
-    for (const role of removed.values()) {
+    for (const role of removedList) {
       await sendLog(
         client,
         "roles",
         new EmbedBuilder()
           .setColor(0xed4245)
-          .setTitle("🎖️ تم ازالة رتبة من عضو في 𝐂𝐨𝐝𝐞𝐗")
+          .setTitle("🎖️ تم ازالة رتبة من عضو في 𝐂𝐨𝐝𝐞𝐗 .")
           .setDescription(
             [
               memberBlock,
@@ -953,7 +1037,7 @@ export function attachGuard(client, options = {}) {
               reason,
               "",
               "**وقت الازالة**",
-              stamp,
+              `\`${stamp}\``,
             ].join("\n"),
           )
           .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Roles" })
@@ -961,18 +1045,18 @@ export function attachGuard(client, options = {}) {
       );
     }
 
-    for (const role of added.values()) {
+    for (const role of addedList) {
       await sendLog(
         client,
         "roles",
         new EmbedBuilder()
           .setColor(0xed4245)
-          .setTitle("🎖️ تم اعطاء رتبة لعضو في 𝐂𝐨𝐝𝐞𝐗")
+          .setTitle("🎖️ تم اعطاء رتبة لعضو في 𝐂𝐨𝐝𝐞𝐗 .")
           .setDescription(
             [
               memberBlock,
               "",
-              "**الرتبة المعطاة**",
+              "**الرتبة المعطاه**",
               `<@&${role.id}>`,
               "",
               adminBlock("تم اعطاء الرتبة بواسطة"),
@@ -981,7 +1065,7 @@ export function attachGuard(client, options = {}) {
               reason,
               "",
               "**وقت الاعطاء**",
-              stamp,
+              `\`${stamp}\``,
             ].join("\n"),
           )
           .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Roles" })
@@ -1214,10 +1298,17 @@ export function attachGuard(client, options = {}) {
   }
 
   function roomInfoBlock(channel) {
+    const icon =
+      channel.type === ChannelType.GuildVoice ||
+      channel.type === ChannelType.GuildStageVoice
+        ? "🔊"
+        : channel.type === ChannelType.GuildCategory
+          ? "📁"
+          : "💬";
     const mention =
       channel.type === ChannelType.GuildCategory
         ? `\`${channel.name}\``
-        : `<#${channel.id}>`;
+        : `${icon} <#${channel.id}>`;
     return [
       "**معلومات الروم المحدثة**",
       `الروم: ${mention}`,
@@ -1245,7 +1336,7 @@ export function attachGuard(client, options = {}) {
       "rooms",
       new EmbedBuilder()
         .setColor(0xed4245)
-        .setTitle(`🔄 تم تحديث الروم | ${channel.name}`)
+        .setTitle(`🔄 تم تحديث الروم | ${channel.name} |`)
         .setDescription(
           [
             roomInfoBlock(channel),
@@ -1383,44 +1474,34 @@ export function attachGuard(client, options = {}) {
 
       for (const c of overwriteDiff.slice(0, 6)) {
         const who = c.type === 0 ? `<@&${c.id}>` : `<@${c.id}>`;
-        const whoLabel = c.type === 0 ? "رتبة" : "عضو";
-        const changeLines = [
-          `الإجراء: \`${c.kind}\``,
-          `المستهدف (${whoLabel}): ${who}`,
-        ];
-        if (c.oldAllow !== c.newAllow) {
-          changeLines.push(
-            `السماح السابق: \`${formatPermBits(c.oldAllow)}\``,
-            `السماح الجديد: \`${formatPermBits(c.newAllow)}\``,
-          );
-        }
-        if (c.oldDeny !== c.newDeny) {
-          changeLines.push(
-            `المنع السابق: \`${formatPermBits(c.oldDeny)}\``,
-            `المنع الجديد: \`${formatPermBits(c.newDeny)}\``,
-          );
-        }
+        const delta = formatPermDelta(
+          c.oldAllow,
+          c.newAllow,
+          c.oldDeny,
+          c.newDeny,
+        );
 
         await sendLog(
           client,
-          "permissions",
+          "rooms",
           new EmbedBuilder()
             .setColor(0xed4245)
-            .setTitle(`🔄 تم تحديث الروم | ${newCh.name}`)
+            .setTitle(`🔒 تم تحديث صلاحيات الروم ${newCh.name}.`)
             .setDescription(
               [
                 roomInfoBlock(newCh),
+                "",
+                "**تحديث صلاحيات الروم**",
+                who,
+                ...delta,
                 "",
                 roomAdminBlock(admin),
                 "",
                 "**وقت التحديث**",
                 `\`${formatLogTime()}\``,
-                "",
-                "**تحديث صلاحيات الروم**",
-                ...changeLines,
               ].join("\n"),
             )
-            .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Permissions" })
+            .setFooter({ text: "𝐂𝐨𝐝𝐞𝐗 · Rooms" })
             .setTimestamp(),
         );
       }
