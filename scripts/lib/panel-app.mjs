@@ -582,8 +582,6 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
 #paypal-buttons{min-height:140px;margin-top:.6rem}
 .msg{margin-top:.9rem;color:#b91c1c;font-size:.88rem;display:none}
 .foot{margin-top:1rem;text-align:center;color:#888;font-size:.78rem}
-.resume{display:none;margin-top:.85rem;width:100%;border:0;border-radius:12px;padding:.9rem 1rem;background:#0f766e;color:#fff;font-weight:700;font-size:.95rem;cursor:pointer}
-.resume.show{display:block}
 .overlay{display:none;position:fixed;inset:0;background:rgba(11,18,32,.72);z-index:99;place-items:center;color:#fff;font-weight:700;font-size:1.05rem;padding:1.5rem;text-align:center}
 .overlay.show{display:grid}
 </style>
@@ -604,7 +602,6 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     <p class="sub"><span data-i18n="user"></span> @${safeUser}</p>
     <p class="sub" data-i18n="payOpts"></p>
     <div id="paypal-buttons"></div>
-    <button type="button" class="resume" id="resumeBtn" data-i18n="resume"></button>
     <p class="msg" id="err"></p>
   </div>
   <p class="foot" data-i18n="foot"></p>
@@ -617,7 +614,6 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
   var discordId = ${JSON.stringify(String(discordId || ""))};
   var err = document.getElementById('err');
   var overlay = document.getElementById('payOverlay');
-  var resumeBtn = document.getElementById('resumeBtn');
   var I18N = {
     ar: {
       title: "موجز الطلب",
@@ -626,15 +622,13 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       id: "كوبي يوزر:",
       payOpts: "خيارات الدفع الإلكتروني السريع",
       foot: "مدعوم من PayPal · 𝐂𝐨𝐝𝐞𝐗",
-      resume: "دفعت؟ اضغط هنا لإظهار صفحة النجاح",
       confirming: "جاري تأكيد الدفع...",
       fail: "فشل الدفع",
       createFail: "تعذر إنشاء الطلب",
       captureFail: "تعذر تأكيد الدفع",
       errPay: "حدث خطأ أثناء الدفع",
       cancel: "تم إلغاء الدفع",
-      declined: "تم رفض الدفع. ما تم خصم المبلغ — جرّب بطاقة ثانية أو PayPal.",
-      notPaidYet: "ما تم تأكيد الدفع بعد. إذا خصموا المبلغ انتظر ثواني واضغط مرة ثانية."
+      declined: "تم رفض الدفع. ما تم خصم المبلغ — جرّب بطاقة ثانية أو PayPal."
     },
     en: {
       title: "Order summary",
@@ -643,15 +637,13 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       id: "Copy User ID:",
       payOpts: "Express checkout options",
       foot: "Powered by PayPal · 𝐂𝐨𝐝𝐞𝐗",
-      resume: "Already paid? Tap here for the success page",
       confirming: "Confirming payment...",
       fail: "Payment failed",
       createFail: "Could not create the order",
       captureFail: "Could not confirm payment",
       errPay: "Something went wrong during payment",
       cancel: "Payment cancelled",
-      declined: "Payment declined. You were not charged — try another card or PayPal.",
-      notPaidYet: "Payment not confirmed yet. If you were charged, wait a few seconds and try again."
+      declined: "Payment declined. You were not charged — try another card or PayPal."
     }
   };
   var lang = localStorage.getItem("codex_pay_lang") || ${JSON.stringify(initialLang)};
@@ -693,29 +685,28 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
   }
   function savePending(orderId){
     try {
-      localStorage.setItem('codex_pending_order', String(orderId || ''));
+      sessionStorage.setItem('codex_pending_order', String(orderId || ''));
       sessionStorage.setItem('codex_pay_meta', JSON.stringify({
         amount: amount, name: name, user: discordUser, lang: lang, orderId: orderId
       }));
     } catch (e) {}
   }
   function pendingId(){
-    try { return localStorage.getItem('codex_pending_order') || ''; } catch (e) { return ''; }
+    try { return sessionStorage.getItem('codex_pending_order') || ''; } catch (e) { return ''; }
   }
   function clearPending(){
-    try { localStorage.removeItem('codex_pending_order'); } catch (e) {}
+    try {
+      sessionStorage.removeItem('codex_pending_order');
+      localStorage.removeItem('codex_pending_order');
+    } catch (e) {}
   }
   function goSuccess(orderId, meta){
     clearPending();
     hideOverlay();
     var url = successUrl(orderId, meta);
-    // Multiple strategies — mobile WebViews often block one of them
-    setTimeout(function(){ hideOverlay(); }, 400);
     try { window.location.assign(url); return; } catch (e0) {}
     try { window.location.href = url; return; } catch (e1) {}
-    try { window.top.location.href = url; } catch (e2) {
-      try { window.location.replace(url); } catch (e3) {}
-    }
+    try { window.location.replace(url); } catch (e2) {}
   }
   function fetchStatus(id){
     var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
@@ -738,11 +729,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       return Promise.resolve(false);
     }
     if (opts && opts.overlay) showOverlay();
-    // Hard stop so overlay can never hang forever
-    var stuck = setTimeout(function(){
-      hideOverlay();
-      if (opts && opts.showResume) resumeBtn.classList.add('show');
-    }, 9000);
+    var stuck = setTimeout(function(){ hideOverlay(); }, 9000);
     return fetchStatus(id).then(function(j){
       clearTimeout(stuck);
       if (j && j.paid) {
@@ -750,18 +737,18 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
         return true;
       }
       hideOverlay();
-      if (opts && opts.showResume) resumeBtn.classList.add('show');
       if (j && j.denied) {
         clearPending();
         showErr(t().declined);
         return false;
       }
-      if (opts && opts.errorIfNot) showErr(t().notPaidYet);
+      if (!opts || !opts.keepPending) clearPending();
       return false;
     });
   }
 
   try {
+    localStorage.removeItem('codex_pending_order');
     sessionStorage.setItem('codex_pay_meta', JSON.stringify({
       amount: amount, name: name, user: discordUser, lang: lang
     }));
@@ -784,7 +771,6 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     }).then(function(r){ return r.json().then(function(j){
       if(!r.ok||!j.id) throw new Error(j.error||t().createFail);
       savePending(j.id);
-      resumeBtn.classList.add('show');
       return j.id;
     }); });
   }
@@ -794,6 +780,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     showOverlay();
     function failDeclined(msg){
       hideOverlay();
+      clearPending();
       showErr(msg || t().declined);
     }
     function afterCapture(details){
@@ -802,7 +789,6 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
         goSuccess(orderId);
         return;
       }
-      // Inspect capture units for decline
       try {
         var caps = (((details || {}).purchase_units || [])[0] || {}).payments || {};
         var list = caps.captures || [];
@@ -811,8 +797,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
         if (good) { goSuccess(orderId); return; }
         if (bad) { failDeclined(t().declined); return; }
       } catch (e) {}
-      // Fallback: ask server (COMPLETED only)
-      checkPaid(orderId, { overlay: true, showResume: true, errorIfNot: true });
+      checkPaid(orderId, { overlay: true, keepPending: true });
     }
     var p =
       actions && actions.order && typeof actions.order.capture === 'function'
@@ -823,10 +808,9 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
             body: JSON.stringify({ orderID: orderId }),
             keepalive: true
           }).then(function(r){ return r.json(); });
-    // Safety timeout so overlay never hangs
     setTimeout(function(){
       if (overlay.classList.contains('show')) {
-        checkPaid(orderId, { overlay: true, showResume: true });
+        checkPaid(orderId, { overlay: true, keepPending: true });
       }
     }, 10000);
     return Promise.resolve(p).then(afterCapture).catch(function(e){
@@ -835,46 +819,44 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
         failDeclined(t().declined);
         return;
       }
-      // Network blip: verify with server instead of fake-success
-      checkPaid(orderId, { overlay: true, showResume: true, errorIfNot: true });
+      checkPaid(orderId, { overlay: true, keepPending: true });
     });
   }
   function onError(e){
     hideOverlay();
+    clearPending();
     var msg = (e && e.message) || '';
     showErr(/declin|denied|instrument/i.test(String(msg)) ? t().declined : (msg || t().errPay));
   }
-  function onCancel(){ hideOverlay(); showErr(t().cancel); }
+  function onCancel(){
+    hideOverlay();
+    clearPending();
+    showErr(t().cancel);
+  }
 
-  // PayPal return with token in URL
+  // PayPal return with token — only go success if actually paid
   try {
     var params = new URLSearchParams(location.search);
     var retToken = params.get('token') || params.get('orderID');
     if (retToken) {
       savePending(retToken);
-      goSuccess(retToken);
+      checkPaid(retToken, { overlay: true, keepPending: true });
       return;
     }
   } catch (e) {}
 
-  // Silent check if a previous attempt may already be paid (no stuck overlay)
   if (pendingId()) {
-    resumeBtn.classList.add('show');
-    checkPaid(pendingId(), { overlay: false, showResume: true });
+    checkPaid(pendingId(), { overlay: false, keepPending: true });
   }
   document.addEventListener('visibilitychange', function(){
     if (document.visibilityState === 'visible' && pendingId()) {
-      checkPaid(pendingId(), { overlay: false, showResume: true });
+      checkPaid(pendingId(), { overlay: false, keepPending: true });
     }
   });
   window.addEventListener('pageshow', function(){
-    if (pendingId()) checkPaid(pendingId(), { overlay: false, showResume: true });
-  });
-  resumeBtn.addEventListener('click', function(){
-    checkPaid(pendingId(), { overlay: true, showResume: true, errorIfNot: true });
+    if (pendingId()) checkPaid(pendingId(), { overlay: false, keepPending: true });
   });
 
-  // Keep PayPal + Debit/Credit Card on mobile and desktop
   if (window.paypal && paypal.Buttons) {
     paypal.Buttons({
       style: { layout:'vertical', color:'gold', shape:'rect', label:'paypal', height:48 },
