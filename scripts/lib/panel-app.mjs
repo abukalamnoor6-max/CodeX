@@ -680,6 +680,8 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
 #paypal-buttons{min-height:140px;margin-top:.6rem}
 .msg{margin-top:.9rem;color:#b91c1c;font-size:.88rem;display:none}
 .foot{margin-top:1rem;text-align:center;color:#888;font-size:.78rem}
+.resume{display:none;margin-top:.85rem;width:100%;border:0;border-radius:12px;padding:.9rem 1rem;background:#0f766e;color:#fff;font-weight:700;font-size:.95rem;cursor:pointer}
+.resume.show{display:block}
 .overlay{display:none;position:fixed;inset:0;background:rgba(11,18,32,.72);z-index:99;place-items:center;color:#fff;font-weight:700;font-size:1.05rem;padding:1.5rem;text-align:center}
 .overlay.show{display:grid}
 </style>
@@ -700,6 +702,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     <p class="sub"><span data-i18n="user"></span> @${safeUser}</p>
     <p class="sub" data-i18n="payOpts"></p>
     <div id="paypal-buttons"></div>
+    <button type="button" class="resume" id="resumeBtn" data-i18n="resume"></button>
     <p class="msg" id="err"></p>
   </div>
   <p class="foot" data-i18n="foot"></p>
@@ -712,6 +715,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
   var discordId = ${JSON.stringify(String(discordId || ""))};
   var err = document.getElementById('err');
   var overlay = document.getElementById('payOverlay');
+  var resumeBtn = document.getElementById('resumeBtn');
   var I18N = {
     ar: {
       title: "موجز الطلب",
@@ -720,13 +724,15 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       id: "كوبي يوزر:",
       payOpts: "خيارات الدفع الإلكتروني السريع",
       foot: "مدعوم من PayPal · 𝐂𝐨𝐝𝐞𝐗",
+      resume: "تم الدفع — اضغط هنا للمتابعة",
       confirming: "جاري تأكيد الدفع...",
       fail: "فشل الدفع",
       createFail: "تعذر إنشاء الطلب",
       captureFail: "تعذر تأكيد الدفع",
       errPay: "حدث خطأ أثناء الدفع",
       cancel: "تم إلغاء الدفع",
-      declined: "تم رفض الدفع. ما تم خصم المبلغ — جرّب بطاقة ثانية أو PayPal."
+      declined: "تم رفض الدفع. ما تم خصم المبلغ — جرّب بطاقة ثانية أو PayPal.",
+      notPaidYet: "ما تم تأكيد الدفع بعد. إذا خصموا المبلغ انتظر ثواني واضغط مرة ثانية."
     },
     en: {
       title: "Order summary",
@@ -735,13 +741,15 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       id: "Copy User ID:",
       payOpts: "Express checkout options",
       foot: "Powered by PayPal · 𝐂𝐨𝐝𝐞𝐗",
+      resume: "Payment done — tap here to continue",
       confirming: "Confirming payment...",
       fail: "Payment failed",
       createFail: "Could not create the order",
       captureFail: "Could not confirm payment",
       errPay: "Something went wrong during payment",
       cancel: "Payment cancelled",
-      declined: "Payment declined. You were not charged — try another card or PayPal."
+      declined: "Payment declined. You were not charged — try another card or PayPal.",
+      notPaidYet: "Payment not confirmed yet. If you were charged, wait a few seconds and try again."
     }
   };
   var lang = localStorage.getItem("codex_pay_lang") || ${JSON.stringify(initialLang)};
@@ -832,6 +840,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     var id = orderId || pendingId();
     if (!id) {
       hideOverlay();
+      resumeBtn.classList.remove('show');
       return Promise.resolve(false);
     }
     if (opts && opts.overlay) showOverlay();
@@ -839,15 +848,19 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     return fetchStatus(id).then(function(j){
       clearTimeout(stuck);
       if (j && j.paid) {
-        goSuccess(id, j);
+        // Only show recovery button after confirmed payment
+        resumeBtn.classList.add('show');
+        if (!opts || opts.autoRedirect !== false) goSuccess(id, j);
         return true;
       }
       hideOverlay();
+      resumeBtn.classList.remove('show');
       if (j && j.denied) {
         clearPending();
         showErr(t().declined);
         return false;
       }
+      if (opts && opts.errorIfNot) showErr(t().notPaidYet);
       if (!opts || !opts.keepPending) clearPending();
       return false;
     });
@@ -950,16 +963,30 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     }
   } catch (e) {}
 
-  if (pendingId()) {
-    checkPaid(pendingId(), { overlay: false, keepPending: true });
-  }
-  document.addEventListener('visibilitychange', function(){
-    if (document.visibilityState === 'visible' && pendingId()) {
-      checkPaid(pendingId(), { overlay: false, keepPending: true });
+  // After returning from PayPal (same tab): if payment completed, show button + redirect
+  function recoverIfPaid(showOverlayFlag){
+    if (!pendingId()) {
+      resumeBtn.classList.remove('show');
+      return;
     }
+    checkPaid(pendingId(), {
+      overlay: !!showOverlayFlag,
+      keepPending: true,
+      autoRedirect: true
+    });
+  }
+  if (pendingId()) recoverIfPaid(false);
+  document.addEventListener('visibilitychange', function(){
+    if (document.visibilityState === 'visible') recoverIfPaid(false);
   });
-  window.addEventListener('pageshow', function(){
-    if (pendingId()) checkPaid(pendingId(), { overlay: false, keepPending: true });
+  window.addEventListener('pageshow', function(){ recoverIfPaid(false); });
+  resumeBtn.addEventListener('click', function(){
+    checkPaid(pendingId(), {
+      overlay: true,
+      keepPending: true,
+      autoRedirect: true,
+      errorIfNot: true
+    });
   });
 
   if (window.paypal && paypal.Buttons) {
