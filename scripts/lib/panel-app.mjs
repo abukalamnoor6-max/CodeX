@@ -219,10 +219,13 @@ export function createPanelApp({
   });
 
   app.get("/health", (req, res) => {
+    const oauth = getDiscordOAuthConfig();
     res.json({
       ok: true,
       user: client.user?.tag || null,
       paypal: Boolean(paypalPayments),
+      discordOAuth: oauth.enabled,
+      payReturn: `${String(oauth.publicBase || "").replace(/\/$/, "")}/pay/return`,
     });
   });
 
@@ -1054,17 +1057,6 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
 </script>
 </body></html>`;
   }
-
-  app.get("/health", (req, res) => {
-    const oauth = getDiscordOAuthConfig();
-    res.json({
-      ok: true,
-      user: client.user?.tag || null,
-      paypal: Boolean(paypalPayments),
-      discordOAuth: oauth.enabled,
-      payReturn: `${oauth.publicBase || ""}/pay/return`,
-    });
-  });
 
   app.get("/auth/discord/start", (req, res) => {
     const oauth = getDiscordOAuthConfig();
