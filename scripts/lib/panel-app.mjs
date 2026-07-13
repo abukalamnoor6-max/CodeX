@@ -1596,7 +1596,7 @@ h1{margin:0 0 .5rem;font-size:1.4rem}p{opacity:.85;line-height:1.6}
     res.json({ ok: true });
   });
 
-  api.patch("/guilds/:id/settings", (req, res) => {
+  api.patch("/guilds/:id/settings", async (req, res) => {
     if (!store.data.settings) store.data.settings = {};
     if (req.body.logChannelId !== undefined) {
       store.data.settings.logChannelId = req.body.logChannelId || null;
@@ -1610,7 +1610,18 @@ h1{margin:0 0 .5rem;font-size:1.4rem}p{opacity:.85;line-height:1.6}
     if (req.body.broadcast) {
       store.data.broadcast = { ...store.data.broadcast, ...req.body.broadcast };
     }
-    store.save();
+    try {
+      store.save();
+    } catch (e) {
+      return res.status(500).json({ error: "تعذر الحفظ: " + e.message });
+    }
+    try {
+      if (typeof store.flushBackup === "function") {
+        await store.flushBackup();
+      }
+    } catch (e) {
+      console.warn("[settings] backup warn", e.message);
+    }
     res.json({
       ok: true,
       settings: {

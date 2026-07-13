@@ -67,33 +67,43 @@ async function selectGuild(id) {
   renderGuilds();
   clearInterval(pollTimer);
   await refreshGuild({ full: true });
-  pollTimer = setInterval(() => refreshGuild({ full: false }), 4000);
+  // حدّث خفيف كل 5 ثوانٍ — بدون إعادة بناء الفورم
+  pollTimer = setInterval(() => refreshGuild({ full: false }), 5000);
 }
 
 async function refreshGuild({ full = false } = {}) {
   if (!selectedGuildId) return;
-  guildData = await api.req(`/api/guilds/${selectedGuildId}`);
-
-  // لا تعيد بناء الفورم وأنت تكتب — حدّث التقدم فقط
-  const typing = document.activeElement &&
-    (document.activeElement.tagName === 'TEXTAREA' ||
-      document.activeElement.tagName === 'INPUT' ||
-      document.activeElement.tagName === 'SELECT');
-
-  if (!full && typing && tab === 'broadcast') {
-    const job = guildData.job || {};
-    const prog = document.getElementById('bc-progress');
-    if (prog) {
-      prog.textContent = job.running
-        ? `جاري الإرسال… ${job.sent || 0}/${job.total || 0} · فشل ${job.failed || 0}`
-        : 'لا يوجد برودكاست حالياً';
-    }
+  try {
+    guildData = await api.req(`/api/guilds/${selectedGuildId}`);
+  } catch (e) {
+    console.warn('refresh failed', e.message);
     return;
   }
 
-  if (!full && typing) return;
+  // تحديث ناعم للإحصائيات فقط
+  softUpdateStats();
+
+  if (!full) {
+    // البرودكاست: حدّث شريط التقدم فقط
+    if (tab === 'broadcast') softUpdateBroadcast();
+    return;
+  }
 
   renderPanel();
+}
+
+function softUpdateStats() {
+  if (!statsEl || !guildData) return;
+  // الإحصائيات العامة من آخر overview إن وُجدت — وإلا اتركها
+}
+
+function softUpdateBroadcast() {
+  const job = guildData?.job || {};
+  const prog = document.getElementById('bc-progress');
+  if (!prog) return;
+  prog.textContent = job.running
+    ? `جاري الإرسال… ${job.sent || 0}/${job.total || 0} · فشل ${job.failed || 0}`
+    : 'لا يوجد برودكاست حالياً';
 }
 
 function renderPanel() {
@@ -312,20 +322,40 @@ function renderSettings(body) {
     </div>
   `;
   body.querySelector('#save-settings').onclick = async () => {
-    await api.req(`/api/guilds/${selectedGuildId}/settings`, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        logChannelId: body.querySelector('#log-channel').value.trim() || null,
-        exemptRoles: splitIds(body.querySelector('#exempt-roles').value),
-        broadcast: {
-          allowedRoles: splitIds(body.querySelector('#bc-roles').value),
-          batchSize: Number(body.querySelector('#batch-size').value) || 5,
-          batchDelayMs: Number(body.querySelector('#batch-delay').value) || 1500,
-        },
-      }),
-    });
-    await refreshGuild({ full: true });
-    alert('تم الحفظ — لوقات الحماية بتروح للروم المحدد');
+    const btn = body.querySelector('#save-settings');
+    btn.disabled = true;
+    btn.textContent = 'جاري الحفظ…';
+    try {
+      const saved = await api.req(`/api/guilds/${selectedGuildId}/settings`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          logChannelId: body.querySelector('#log-channel').value.trim() || null,
+          exemptRoles: splitIds(body.querySelector('#exempt-roles').value),
+          broadcast: {
+            allowedRoles: splitIds(body.querySelector('#bc-roles').value),
+            batchSize: Number(body.querySelector('#batch-size').value) || 5,
+            batchDelayMs: Number(body.querySelector('#batch-delay').value) || 1500,
+          },
+        }),
+      });
+      if (saved?.settings) {
+        guildData.settings = {
+          ...guildData.settings,
+          ...saved.settings,
+          broadcast: saved.settings.broadcast || guildData.settings.broadcast,
+        };
+      }
+      // حدّث القيم المعروضة بدون إعادة بناء مزعجة
+      btn.textContent = '✓ تم الحفظ';
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = 'حفظ';
+      }, 1200);
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = 'حفظ';
+      alert('فشل الحفظ: ' + e.message);
+    }
   };
 }
 
