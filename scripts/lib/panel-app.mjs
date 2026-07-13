@@ -680,8 +680,8 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
 .row{display:flex;justify-content:space-between;margin-bottom:1rem;font-size:1rem}
 .row strong{font-size:1.05rem}
 .sub{margin:0 0 .55rem;color:#555;font-size:.9rem}
-#paypal-buttons{min-height:140px;margin-top:.6rem}
-#mobile-pay{display:none;margin-top:.6rem}
+#paypal-buttons{min-height:0;margin-top:.6rem}
+#mobile-pay{display:block;margin-top:.6rem}
 .m-pay{width:100%;border:0;border-radius:4px;padding:.95rem 1rem;font-weight:700;font-size:1rem;cursor:pointer;margin:0 0 .55rem}
 .m-paypal{background:#ffc439;color:#003087}
 .m-card{background:#2c2e2f;color:#fff;display:flex;align-items:center;justify-content:center;gap:.55rem}
@@ -693,6 +693,14 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
 .resume.show{display:block}
 .overlay{display:none;position:fixed;inset:0;background:rgba(11,18,32,.72);z-index:99;place-items:center;color:#fff;font-weight:700;font-size:1.05rem;padding:1.5rem;text-align:center}
 .overlay.show{display:grid}
+@media (min-width:901px){
+  #paypal-buttons{min-height:140px}
+  #mobile-pay{display:none}
+}
+@media (max-width:900px){
+  #paypal-buttons{display:none !important;min-height:0 !important}
+  #mobile-pay{display:block !important}
+}
 </style>
 <script src="https://www.paypal.com/sdk/js?client-id=${clientId}&currency=USD&intent=capture&components=buttons&enable-funding=venmo,paylater,card"></script>
 </head><body>
@@ -969,18 +977,16 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     showErr(t().cancel);
   }
 
-  // PayPal return with token — only go success if actually paid
+  // PayPal return with token — verify paid, but NEVER block payment buttons
   try {
     var params = new URLSearchParams(location.search);
     var retToken = params.get('token') || params.get('orderID');
     if (retToken) {
       savePending(retToken);
       checkPaid(retToken, { overlay: true, keepPending: true });
-      return;
     }
   } catch (e) {}
 
-  // After returning from PayPal (same tab): if payment completed, show button + redirect
   function recoverIfPaid(showOverlayFlag){
     if (!pendingId()) {
       resumeBtn.classList.remove('show');
@@ -1006,11 +1012,6 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     });
   });
 
-  var ua = navigator.userAgent || '';
-  var isMobile = /Android|iPhone|iPad|iPod|Mobile|Discord|FBAN|Line\//i.test(ua)
-    || ((window.matchMedia && window.matchMedia('(max-width: 900px)').matches)
-      && ('ontouchstart' in window));
-
   function startMobileRedirect(){
     showOverlay();
     overlay.textContent = t().confirming;
@@ -1022,7 +1023,6 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       return r.json().then(function(j){
         if (!r.ok || !j.url) throw new Error((j && j.error) || t().createFail);
         savePending(j.id);
-        // Full-page PayPal — return_url /pay/return sends buyer to success
         window.location.href = j.url;
       });
     }).catch(function(e){
@@ -1031,27 +1031,34 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     });
   }
 
-  if (isMobile) {
-    // Smart Buttons break success redirect inside mobile/Discord WebViews.
-    // Use full PayPal redirect so /pay/return always runs after payment.
-    var desk = document.getElementById('paypal-buttons');
-    var mob = document.getElementById('mobile-pay');
-    if (desk) desk.style.display = 'none';
-    if (mob) mob.style.display = 'block';
-    document.getElementById('mPayPal').addEventListener('click', startMobileRedirect);
-    document.getElementById('mCard').addEventListener('click', startMobileRedirect);
-  } else {
-    var mobHide = document.getElementById('mobile-pay');
-    if (mobHide) mobHide.style.display = 'none';
-    if (window.paypal && paypal.Buttons) {
+  // Always wire visible fallback buttons (phones + if Smart Buttons fail)
+  var mPayPal = document.getElementById('mPayPal');
+  var mCard = document.getElementById('mCard');
+  if (mPayPal) mPayPal.addEventListener('click', startMobileRedirect);
+  if (mCard) mCard.addEventListener('click', startMobileRedirect);
+
+  var desk = window.matchMedia && window.matchMedia('(min-width: 901px)').matches;
+  if (desk && window.paypal && paypal.Buttons) {
+    try {
       paypal.Buttons({
         style: { layout:'vertical', color:'gold', shape:'rect', label:'paypal', height:48 },
         createOrder: createOrder,
         onApprove: onApprove,
         onError: onError,
         onCancel: onCancel
-      }).render('#paypal-buttons');
+      }).render('#paypal-buttons').catch(function(){
+        // Smart Buttons failed — force fallback buttons on desktop too
+        var mob = document.getElementById('mobile-pay');
+        if (mob) mob.style.display = 'block';
+      });
+    } catch (e) {
+      var mob2 = document.getElementById('mobile-pay');
+      if (mob2) mob2.style.display = 'block';
     }
+  } else {
+    // Phone / small screen: ensure fallback visible
+    var mob3 = document.getElementById('mobile-pay');
+    if (mob3) mob3.style.display = 'block';
   }
 })();
 </script>
