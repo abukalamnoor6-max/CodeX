@@ -52,7 +52,100 @@ export function createPanelApp({
   const app = express();
   app.use(cors());
 
-  // PayPal webhook needs raw body — must be before express.json()
+  function clearPendingPayCookie(res) {
+    res.append(
+      "Set-Cookie",
+      "codex_pending_pay=; Path=/; Max-Age=0; Secure; SameSite=Lax",
+    );
+  }
+
+  async function resolvePayOrderState(orderId) {
+    if (!paypalPayments || !orderId) {
+      return { paid: false, denied: false, status: "", meta: {} };
+    }
+    const saved = takePayMeta(orderId) || {};
+    try {
+      // Best-effort capture if buyer already approved
+      await paypalPayments.captureOrder(orderId).catch(() => null);
+      const order = await paypalPayments.getOrder(orderId);
+      const status = String(order?.status || "");
+      const captures =
+        order?.purchase_units?.flatMap((u) => u.payments?.captures || []) ||
+        [];
+      const captureCompleted = captures.some(
+        (c) => String(c.status || "") === "COMPLETED",
+      );
+      const captureDenied = captures.some((c) =>
+        /DECLINED|DENIED|FAILED|VOIDED/i.test(String(c.status || "")),
+      );
+      const paid = status === "COMPLETED" || captureCompleted;
+      const denied =
+        captureDenied || /VOIDED|EXPIRED/i.test(status);
+      let custom = {};
+      try {
+        custom =
+          paypalPayments.decodeCustomId?.(
+            order?.purchase_units?.[0]?.custom_id || "",
+          ) || {};
+      } catch {
+        custom = {};
+      }
+      return {
+        paid,
+        denied,
+        status,
+        meta: {
+          amount:
+            saved.amount || order?.purchase_units?.[0]?.amount?.value || "",
+          name: saved.name || custom.productName || "",
+          user: saved.user || custom.discordUser || "",
+          lang: saved.lang || "ar",
+        },
+      };
+    } catch (e) {
+      return {
+        paid: false,
+        denied: false,
+        status: "ERROR",
+        meta: saved,
+        error: e.message,
+      };
+    }
+  }
+
+  // PayPal mobile/card full-page return lands here with ?token=&PayerID=
+  app.get("/pay/return", async (req, res) => {
+    const token = String(req.query.token || req.query.orderID || "").trim();
+    const cookies = parseCookies(req);
+    const cookieId = String(cookies.codex_pending_pay || "").trim();
+    const orderId = token || cookieId;
+    if (!orderId) {
+      return res.redirect(302, "/pay/cancel");
+    }
+    const state = await resolvePayOrderState(orderId);
+    const q = new URLSearchParams({
+      token: orderId,
+      lang: state.meta.lang === "en" ? "en" : "ar",
+    });
+    if (state.meta.amount) q.set("amount", String(state.meta.amount));
+    if (state.meta.name) q.set("name", String(state.meta.name));
+    if (state.meta.user) q.set("user", String(state.meta.user));
+
+    if (state.paid || state.status === "APPROVED") {
+      clearPendingPayCookie(res);
+      return res.redirect(302, `/pay/success?${q.toString()}`);
+    }
+    if (state.denied) {
+      clearPendingPayCookie(res);
+      return res.redirect(302, `/pay/cancel?${q.toString()}`);
+    }
+    // PayPal sent buyer back with a token — settle on success page
+    if (token) {
+      clearPendingPayCookie(res);
+      return res.redirect(302, `/pay/success?${q.toString()}`);
+    }
+    return res.redirect(302, `/pay/cancel`);
+  });
   app.post(
     "/paypal/webhook",
     express.raw({ type: "application/json" }),
@@ -153,6 +246,11 @@ export function createPanelApp({
         user: String(discordUser || "").replace(/^@+/, ""),
         lang: String(lang || "ar").toLowerCase() === "en" ? "en" : "ar",
       });
+      // Survives mobile Safari / Discord WebView storage wipes
+      res.setHeader(
+        "Set-Cookie",
+        `codex_pending_pay=${encodeURIComponent(order.id)}; Path=/; Max-Age=7200; Secure; SameSite=Lax`,
+      );
       res.json({ ok: true, id: order.id, url: order.url, status: order.status });
     } catch (e) {
       res.status(400).json({ ok: false, error: e.message });
@@ -685,19 +783,27 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
   }
   function savePending(orderId){
     try {
+      // localStorage survives mobile tab switches better than sessionStorage
+      localStorage.setItem('codex_pending_order', String(orderId || ''));
       sessionStorage.setItem('codex_pending_order', String(orderId || ''));
       sessionStorage.setItem('codex_pay_meta', JSON.stringify({
         amount: amount, name: name, user: discordUser, lang: lang, orderId: orderId
       }));
+      document.cookie = 'codex_pending_pay=' + encodeURIComponent(String(orderId||'')) + '; Path=/; Max-Age=7200; SameSite=Lax; Secure';
     } catch (e) {}
   }
   function pendingId(){
-    try { return sessionStorage.getItem('codex_pending_order') || ''; } catch (e) { return ''; }
+    try {
+      return sessionStorage.getItem('codex_pending_order')
+        || localStorage.getItem('codex_pending_order')
+        || '';
+    } catch (e) { return ''; }
   }
   function clearPending(){
     try {
       sessionStorage.removeItem('codex_pending_order');
       localStorage.removeItem('codex_pending_order');
+      document.cookie = 'codex_pending_pay=; Path=/; Max-Age=0; SameSite=Lax; Secure';
     } catch (e) {}
   }
   function goSuccess(orderId, meta){
@@ -748,7 +854,6 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
   }
 
   try {
-    localStorage.removeItem('codex_pending_order');
     sessionStorage.setItem('codex_pay_meta', JSON.stringify({
       amount: amount, name: name, user: discordUser, lang: lang
     }));
@@ -972,10 +1077,29 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
   // Checkout gate: Discord OAuth (username + Client role), then PayPal
   app.get("/pay", async (req, res) => {
     try {
+      // Mobile recovery: pending cookie after PayPal when storage was wiped
+      const cookies = parseCookies(req);
+      const pendingCookie = String(cookies.codex_pending_pay || "").trim();
+      if (pendingCookie && !String(req.query.token || "").trim()) {
+        const state = await resolvePayOrderState(pendingCookie);
+        if (state.paid || state.status === "APPROVED") {
+          const q = new URLSearchParams({
+            token: pendingCookie,
+            lang: state.meta.lang === "en" ? "en" : "ar",
+          });
+          if (state.meta.amount) q.set("amount", String(state.meta.amount));
+          if (state.meta.name) q.set("name", String(state.meta.name));
+          if (state.meta.user) q.set("user", String(state.meta.user));
+          clearPendingPayCookie(res);
+          return res.redirect(302, `/pay/success?${q.toString()}`);
+        }
+      }
+
       // PayPal full-page return after card/wallet approve
       const retToken = String(req.query.token || req.query.orderID || "").trim();
       if (retToken) {
-        const saved = takePayMeta(retToken) || {};
+        const state = await resolvePayOrderState(retToken);
+        const saved = state.meta || takePayMeta(retToken) || {};
         const q = new URLSearchParams({
           token: retToken,
           lang:
@@ -989,6 +1113,10 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
         if (amount) q.set("amount", String(amount));
         if (name) q.set("name", String(name));
         if (user) q.set("user", String(user));
+        clearPendingPayCookie(res);
+        if (state.denied) {
+          return res.redirect(302, `/pay/cancel?${q.toString()}`);
+        }
         return res.redirect(302, `/pay/success?${q.toString()}`);
       }
       if (!paypalPayments) {

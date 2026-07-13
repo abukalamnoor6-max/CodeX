@@ -148,15 +148,9 @@ export function createPayPalPayments({
         .trim()
         .slice(0, 120) || "𝐂𝐨𝐝𝐞𝐗 service";
 
-    // Mobile card/wallet flows leave the page and return via return_url
-    // (JS onApprove often never runs). Bake order details into the URL.
+    // Mobile card/wallet flows leave the page and return via return_url.
+    // Use a dedicated /pay/return endpoint (PayPal appends token & PayerID).
     const payLang = String(lang || metadata.lang || "ar").toLowerCase() === "en" ? "en" : "ar";
-    const successQs = new URLSearchParams({
-      amount: value,
-      name: productName,
-      user,
-      lang: payLang,
-    });
     const cancelQs = new URLSearchParams({
       amount: value,
       name: productName,
@@ -180,7 +174,7 @@ export function createPayPalPayments({
         shipping_preference: "NO_SHIPPING",
         user_action: "PAY_NOW",
         landing_page: "LOGIN",
-        return_url: `${base}/pay/success?${successQs.toString()}`,
+        return_url: `${base}/pay/return`,
         cancel_url: `${base}/pay/cancel?${cancelQs.toString()}`,
       },
     });
