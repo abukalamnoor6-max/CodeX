@@ -196,6 +196,44 @@ export function attachBroadcastUi({ client, store, broadcast, ownerId, guildId }
 export async function registerPanelCommands(client, guildId) {
   const body = [
     new SlashCommandBuilder()
+      .setName("order")
+      .setDescription("إنشاء فاتورة طلب في روم الطلبات")
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+      .addUserOption((o) =>
+        o.setName("user").setDescription("العميل").setRequired(true),
+      )
+      .addStringOption((o) =>
+        o
+          .setName("order_id")
+          .setDescription("رقم الطلب / الفاتورة")
+          .setRequired(true),
+      )
+      .addStringOption((o) =>
+        o
+          .setName("product")
+          .setDescription("اسم المنتج (اختياري)")
+          .setRequired(false),
+      )
+      .addStringOption((o) =>
+        o
+          .setName("amount")
+          .setDescription("المبلغ مثل 50 أو 0.10 (اختياري)")
+          .setRequired(false),
+      )
+      .addStringOption((o) =>
+        o
+          .setName("currency")
+          .setDescription("العملة: USD أو SAR (اختياري)")
+          .setRequired(false),
+      )
+      .addStringOption((o) =>
+        o
+          .setName("payment")
+          .setDescription("طريقة الدفع: PayPal / تحويل / بطاقة")
+          .setRequired(false),
+      )
+      .toJSON(),
+    new SlashCommandBuilder()
       .setName("bc-panel")
       .setDescription("لوحة البرودكاست")
       .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)

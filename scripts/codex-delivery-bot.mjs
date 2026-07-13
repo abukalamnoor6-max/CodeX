@@ -29,6 +29,7 @@ import {
   syncLogRooms,
 } from "./lib/codex-logs.mjs";
 import { createPanelStore } from "./lib/panel-store.mjs";
+import { attachPanelSettingsBackup } from "./lib/panel-backup.mjs";
 import { createBroadcastService } from "./lib/broadcast.mjs";
 import {
   attachBroadcastUi,
@@ -150,6 +151,7 @@ const client = new Client({
 });
 
 const panelStore = createPanelStore();
+const panelBackup = attachPanelSettingsBackup(client, panelStore);
 
 attachGuard(client, {
   getLogChannelId: () => panelStore.data.settings?.logChannelId || null,
@@ -441,6 +443,11 @@ client.once("clientReady", async () => {
   console.log("bot ready as", client.user.tag);
   saveMeta();
   try {
+    await panelBackup.boot();
+  } catch (e) {
+    console.warn("panel backup boot failed", e.message);
+  }
+  try {
     await registerPanelCommands(client, GUILD_ID);
     console.log("panel slash commands registered");
   } catch (e) {
@@ -489,7 +496,65 @@ client.once("clientReady", async () => {
   }
 });
 
+const ORDERS_CHANNEL_ID =
+  process.env.DISCORD_ORDERS_CHANNEL_ID || "1524971495921684601";
+
 client.on(Events.InteractionCreate, async (interaction) => {
+  // /order — فاتورة يدوية في روم الطلبات
+  if (interaction.isChatInputCommand() && interaction.commandName === "order") {
+    try {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      const user = interaction.options.getUser("user", true);
+      const orderId = String(
+        interaction.options.getString("order_id", true),
+      ).trim();
+      const product =
+        interaction.options.getString("product")?.trim() || "طلب يدوي";
+      const amount = interaction.options.getString("amount")?.trim() || "—";
+      const currencyRaw =
+        interaction.options.getString("currency")?.trim().toUpperCase() ||
+        "USD";
+      const currencyLabel =
+        currencyRaw === "SAR" || currencyRaw === "ر.س" ? "ر.س" : currencyRaw;
+      const payment =
+        interaction.options.getString("payment")?.trim() || "يدوي";
+
+      const invoiceNo = orderId.toUpperCase().startsWith("CX-")
+        ? orderId
+        : `CX-${orderId}`;
+
+      const result = await sendPaidInvoice({
+        invoiceNo,
+        productName: product,
+        amountLabel: amount,
+        currencyLabel,
+        email: "—",
+        customerName: user.globalName || user.username,
+        discordId: user.id,
+        discordUser: user.username,
+        paymentMethod: payment,
+        modeLabel: "يدوي",
+        refId: invoiceNo,
+        channelIdOverride: ORDERS_CHANNEL_ID,
+      });
+
+      await interaction.editReply({
+        content: `✅ تم نشر الفاتورة \`${result.invoiceNo}\` في <#${ORDERS_CHANNEL_ID}> للعميل ${user}`,
+      });
+    } catch (e) {
+      console.warn("/order failed", e.message);
+      const msg = `❌ فشل إنشاء الفاتورة: ${e.message}`;
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({ content: msg }).catch(() => {});
+      } else {
+        await interaction
+          .reply({ content: msg, flags: MessageFlags.Ephemeral })
+          .catch(() => {});
+      }
+    }
+    return;
+  }
+
   if (!interaction.isButton()) return;
 
   const [action, orderId] = interaction.customId.split(":");
@@ -653,11 +718,15 @@ async function sendPaidInvoice({
   paymentMethod = "PayPal",
   modeLabel = "",
   refId = "",
+  channelIdOverride = "",
 }) {
-  const channelId = PAYPAL_NOTIFY_CHANNEL_ID || meta.deliveryChannelId;
+  const channelId =
+    channelIdOverride ||
+    PAYPAL_NOTIFY_CHANNEL_ID ||
+    meta.deliveryChannelId;
   if (!channelId) {
     console.warn("paid invoice but no notify channel");
-    return;
+    throw new Error("روم الطلبات غير محدد");
   }
   const staffRoleOwner =
     process.env.DISCORD_STAFF_ROLE_OWNER || "1524961206144860333";
