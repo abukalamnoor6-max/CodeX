@@ -23,7 +23,11 @@ import {
 import { attachTickets, postTicketPanel } from "./lib/tickets.mjs";
 import { attachDividerCommand } from "./lib/divider-command.mjs";
 import { attachTicketAi } from "./lib/ticket-ai.mjs";
-import { attachCodexLogs, setupLogRooms } from "./lib/codex-logs.mjs";
+import {
+  attachCodexLogs,
+  setupLogRooms,
+  syncLogRooms,
+} from "./lib/codex-logs.mjs";
 import { createPanelStore } from "./lib/panel-store.mjs";
 import { createBroadcastService } from "./lib/broadcast.mjs";
 import {
@@ -443,15 +447,21 @@ client.once("clientReady", async () => {
     console.warn("panel commands failed", e.message);
   }
 
-  if (process.env.CODEX_SETUP_LOGS === "1") {
-    try {
-      const guild = await client.guilds.fetch(GUILD_ID);
-      await guild.channels.fetch();
+  try {
+    const guild = await client.guilds.fetch(GUILD_ID);
+    await guild.channels.fetch();
+    const synced = await syncLogRooms(guild);
+    console.log(
+      "log rooms synced",
+      synced.changed,
+      synced.mapped.filter((m) => m.includes("MISSING")).join(" | ") || "ok",
+    );
+    if (process.env.CODEX_SETUP_LOGS === "1") {
       const created = await setupLogRooms(guild, client);
       console.log("log rooms:", created.length);
-    } catch (e) {
-      console.warn("setup logs failed", e.message);
     }
+  } catch (e) {
+    console.warn("setup logs failed", e.message);
   }
 
   if (!meta.deliveryChannelId) {

@@ -41,6 +41,23 @@ export const LOG_TYPES = {
   nicknames: "✏️┝┃الألقاب",
 };
 
+/** كلمات مفتاحية لربط الرومات حتى لو الاسم تغيّر شوي */
+const LOG_NAME_HINTS = {
+  messages: [/حذف/, /رسائل/],
+  allmessages: [/كل.*رسال/, /الرسائل/],
+  members: [/دخول/, /خروج/],
+  roles: [/الرتب/, /رتب/],
+  channels: [/الرومات/, /رومات/],
+  voice: [/الصوت/, /صوت/],
+  moderation: [/العقوبات/, /عقوب/],
+  automod: [/أوتو|اوتو/, /مود/],
+  webhooks: [/ويب/, /هوك/],
+  admin: [/أدمن|ادمن/],
+  streaming: [/البث/, /مباشر/],
+  invites: [/دعوات/],
+  nicknames: [/ألقاب|القاب/],
+};
+
 /** لوقات حساسة — OWNER فقط */
 export const SENSITIVE_CODEX_LOG_TYPES = new Set([
   "admin",
@@ -150,14 +167,116 @@ function disabledMenu(action) {
   ];
 }
 
-async function getCh(client, guildId, type) {
-  const { g } = guildCfg(guildId);
-  const id = g.channels?.[type];
-  if (!id) return null;
-  return (
-    client.channels.cache.get(id) ||
-    (await client.channels.fetch(id).catch(() => null))
+function normalizeLogName(name) {
+  return String(name || "")
+    .replace(/[・•‧∙⋅·|│┃┝]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function findExistingLogChannel(guild, type, preferredParentId = null) {
+  const expected = LOG_TYPES[type];
+  if (!expected) return null;
+  const texts = [...guild.channels.cache.values()].filter(
+    (c) => c.type === ChannelType.GuildText,
   );
+
+  const exact = texts.find((c) => c.name === expected);
+  if (exact) return exact;
+
+  const expectedNorm = normalizeLogName(expected);
+  const byNorm = texts.find((c) => normalizeLogName(c.name) === expectedNorm);
+  if (byNorm) return byNorm;
+
+  const hints = LOG_NAME_HINTS[type] || [];
+  if (!hints.length) return null;
+
+  const scored = texts
+    .map((c) => {
+      const n = c.name;
+      const hit = hints.every((re) => re.test(n));
+      if (!hit) return null;
+      const parentBonus =
+        preferredParentId && c.parentId === preferredParentId ? 2 : 0;
+      const codexBonus = /سجل|codeX|سجلات/i.test(c.parent?.name || "")
+        ? 1
+        : 0;
+      return { c, score: parentBonus + codexBonus };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score);
+
+  return scored[0]?.c || null;
+}
+
+function memberRoleIds(member) {
+  const raw = member?._roles;
+  if (Array.isArray(raw) && raw.length) return new Set(raw.map(String));
+  return new Set([...(member?.roles?.cache?.keys?.() || [])].map(String));
+}
+
+/**
+ * يربط رومات اللوقات الموجودة بالـ IDs (بدون إنشاء رومات جديدة).
+ * يحل مشكلة اختفاء log-rooms.json على Railway.
+ */
+export async function syncLogRooms(guild) {
+  const { data, g } = guildCfg(guild.id);
+  await guild.channels.fetch().catch(() => null);
+
+  let category =
+    (g.categoryId && guild.channels.cache.get(g.categoryId)) ||
+    [...guild.channels.cache.values()].find(
+      (c) =>
+        c.type === ChannelType.GuildCategory &&
+        /سجلات|LOGS|logs/i.test(c.name),
+    ) ||
+    null;
+  if (category) g.categoryId = category.id;
+
+  let changed = 0;
+  const mapped = [];
+  for (const type of Object.keys(LOG_TYPES)) {
+    const byId = g.channels?.[type]
+      ? guild.channels.cache.get(g.channels[type])
+      : null;
+    if (byId) {
+      mapped.push(`${type}->${byId.name}`);
+      continue;
+    }
+    const found = findExistingLogChannel(guild, type, category?.id || null);
+    if (found) {
+      g.channels[type] = found.id;
+      changed += 1;
+      mapped.push(`${type}->${found.name}`);
+    } else {
+      mapped.push(`${type}->MISSING`);
+    }
+  }
+  if (changed) saveStore(data);
+  return { changed, mapped, categoryId: g.categoryId || null };
+}
+
+async function getCh(client, guildId, type) {
+  const { data, g } = guildCfg(guildId);
+  const id = g.channels?.[type];
+  if (id) {
+    const ch =
+      client.channels.cache.get(id) ||
+      (await client.channels.fetch(id).catch(() => null));
+    if (ch) return ch;
+  }
+
+  const guild =
+    client.guilds.cache.get(guildId) ||
+    (await client.guilds.fetch(guildId).catch(() => null));
+  if (!guild) return null;
+
+  const found = findExistingLogChannel(guild, type, g.categoryId || null);
+  if (!found) return null;
+  g.channels[type] = found.id;
+  saveStore(data);
+  return found;
 }
 
 async function send(ch, payload) {
@@ -262,11 +381,14 @@ export async function setupLogRooms(guild, client, modRoleId = null) {
     const existing = g.channels?.[type]
       ? guild.channels.cache.get(g.channels[type])
       : null;
-    if (existing) {
+    const found =
+      existing || findExistingLogChannel(guild, type, category?.id || null);
+    if (found) {
+      g.channels[type] = found.id;
       try {
-        await existing.permissionOverwrites.set(overwritesFor(type));
+        await found.permissionOverwrites.set(overwritesFor(type));
       } catch {}
-      created.push(`✅ ${existing}`);
+      created.push(`✅ ${found}`);
       continue;
     }
     const channel = await guild.channels.create({
@@ -450,9 +572,11 @@ export function attachCodexLogs(client, { guildId, ownerId }) {
 
   client.on("guildMemberUpdate", async (oldM, newM) => {
     if (newM.guild.id !== guildId) return;
-    const added = newM.roles.cache.filter((r) => !oldM.roles.cache.has(r.id));
-    const removed = oldM.roles.cache.filter((r) => !newM.roles.cache.has(r.id));
-    if (added.size || removed.size) {
+    const oldRoles = memberRoleIds(oldM);
+    const newRoles = memberRoleIds(newM);
+    const addedIds = [...newRoles].filter((id) => !oldRoles.has(id));
+    const removedIds = [...oldRoles].filter((id) => !newRoles.has(id));
+    if (addedIds.length || removedIds.length) {
       const ch = await getCh(client, newM.guild.id, "roles");
       if (ch) {
         const entry = await audit(
@@ -460,8 +584,13 @@ export function attachCodexLogs(client, { guildId, ownerId }) {
           AuditLogEvent.MemberRoleUpdate,
           newM.id,
         );
-        if (added.size) {
-          const danger = added.some((r) =>
+        const resolveRole = (id) =>
+          newM.guild.roles.cache.get(id) ||
+          oldM.roles?.cache?.get?.(id) ||
+          null;
+        if (addedIds.length) {
+          const addedRoles = addedIds.map(resolveRole).filter(Boolean);
+          const danger = addedRoles.some((r) =>
             r.permissions.has(PermissionFlagsBits.Administrator),
           );
           const embed = new EmbedBuilder()
@@ -471,9 +600,14 @@ export function attachCodexLogs(client, { guildId, ownerId }) {
               { name: "👤", value: `${newM}`, inline: true },
               {
                 name: "🎭",
-                value: [...added.values()].map((r) => `${r}`).join("\n"),
+                value:
+                  addedRoles.map((r) => `${r}`).join("\n") ||
+                  addedIds.map((id) => `<@&${id}>`).join("\n"),
                 inline: true,
               },
+              ...(entry?.executor
+                ? [{ name: "👮", value: `${entry.executor}`, inline: true }]
+                : []),
             )
             .setTimestamp();
           await send(
@@ -483,7 +617,8 @@ export function attachCodexLogs(client, { guildId, ownerId }) {
               : { embeds: [embed] },
           );
         }
-        if (removed.size) {
+        if (removedIds.length) {
+          const removedRoles = removedIds.map(resolveRole).filter(Boolean);
           await send(ch, {
             embeds: [
               new EmbedBuilder()
@@ -493,7 +628,9 @@ export function attachCodexLogs(client, { guildId, ownerId }) {
                   { name: "👤", value: `${newM}`, inline: true },
                   {
                     name: "🎭",
-                    value: [...removed.values()].map((r) => `${r}`).join("\n"),
+                    value:
+                      removedRoles.map((r) => `${r}`).join("\n") ||
+                      removedIds.map((id) => `<@&${id}>`).join("\n"),
                     inline: true,
                   },
                   ...(entry?.executor
