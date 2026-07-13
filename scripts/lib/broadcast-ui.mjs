@@ -211,26 +211,82 @@ export async function registerPanelCommands(client, guildId) {
       .addStringOption((o) =>
         o
           .setName("product")
-          .setDescription("اسم المنتج (اختياري)")
-          .setRequired(false),
+          .setDescription("المنتج")
+          .setRequired(true)
+          .addChoices(
+            { name: "برمجة فايف إم — 800 ر.س", value: "برمجة فايف إم" },
+            { name: "مابات فايف إم — 80 ر.س", value: "مابات فايف إم بشعار سيرفرك" },
+            { name: "حساب فايف إم — 20 ر.س", value: "حساب لعبة FiveM" },
+            { name: "بوت دسكورد متقدم — 125 ر.س", value: "بوت دسكورد متقدم" },
+            { name: "بوت دسكورد متوسط — 75 ر.س", value: "بوت دسكورد متوسط" },
+            { name: "بوت دسكورد أساسي — 30 ر.س", value: "بوت دسكورد أساسي" },
+            { name: "سيرفر دسكورد كامل — 200 ر.س", value: "برمجة سيرفر دسكورد كامل" },
+            { name: "نيترو سنة — 189 ر.س", value: "نيترو سنة شحن" },
+            { name: "نيترو 3 شهور — 55 ر.س", value: "نيترو قيمنق 3 شهور" },
+            { name: "يوتيوب بريميوم 3 شهور — 35 ر.س", value: "يوتيوب بريميوم 3 شهور" },
+            { name: "سناب بلس 3 شهور — 29 ر.س", value: "سناب بلس — 3 شهور" },
+            { name: "نتفلكس شهر — 22 ر.س", value: "نتفلكس — شهر" },
+            { name: "شاهد شهر — 18 ر.س", value: "شاهد — شهر" },
+            { name: "جيمناي — 14 ر.س", value: "جيمناي" },
+            { name: "بوستات شهر 8 — 13 ر.س", value: "بوستات شهر — 8 بوستات" },
+            { name: "بوستات شهر 14 — 21 ر.س", value: "بوستات شهر — 14 بوستات" },
+            { name: "بوستات شهر 20 — 29 ر.س", value: "بوستات شهر — 20 بوستات" },
+            { name: "توكنات دسكورد 2 — 8 ر.س", value: "توكنات دسكورد — 2 توكن" },
+            { name: "خاص المتجر — 5 ر.س", value: "خاص المتجر — 5" },
+            { name: "خاص المتجر — 50 ر.س", value: "خاص المتجر — 50" },
+            { name: "خاص المتجر — 100 ر.س", value: "خاص المتجر — 100" },
+            { name: "خاص المتجر — 250 ر.س", value: "خاص المتجر — 250" },
+            { name: "خاص المتجر — 500 ر.س", value: "خاص المتجر — 500" },
+            { name: "خاص المتجر — 1000 ر.س", value: "خاص المتجر — 1000" },
+            { name: "أخرى / مخصص", value: "طلب مخصص" },
+          ),
       )
       .addStringOption((o) =>
         o
           .setName("amount")
-          .setDescription("المبلغ مثل 50 أو 0.10 (اختياري)")
-          .setRequired(false),
-      )
-      .addStringOption((o) =>
-        o
-          .setName("currency")
-          .setDescription("العملة: USD أو SAR (اختياري)")
-          .setRequired(false),
+          .setDescription("المبلغ")
+          .setRequired(true)
+          .addChoices(
+            { name: "5 ر.س", value: "5" },
+            { name: "8 ر.س", value: "8" },
+            { name: "13 ر.س", value: "13" },
+            { name: "14 ر.س", value: "14" },
+            { name: "18 ر.س", value: "18" },
+            { name: "20 ر.س", value: "20" },
+            { name: "21 ر.س", value: "21" },
+            { name: "22 ر.س", value: "22" },
+            { name: "29 ر.س", value: "29" },
+            { name: "30 ر.س", value: "30" },
+            { name: "35 ر.س", value: "35" },
+            { name: "50 ر.س", value: "50" },
+            { name: "55 ر.س", value: "55" },
+            { name: "75 ر.س", value: "75" },
+            { name: "80 ر.س", value: "80" },
+            { name: "100 ر.س", value: "100" },
+            { name: "125 ر.س", value: "125" },
+            { name: "189 ر.س", value: "189" },
+            { name: "200 ر.س", value: "200" },
+            { name: "250 ر.س", value: "250" },
+            { name: "500 ر.س", value: "500" },
+            { name: "800 ر.س", value: "800" },
+            { name: "1000 ر.س", value: "1000" },
+            { name: "0.10 USD (تجربة)", value: "0.10|USD" },
+            { name: "مخصص / يُحدد لاحقاً", value: "—" },
+          ),
       )
       .addStringOption((o) =>
         o
           .setName("payment")
-          .setDescription("طريقة الدفع: PayPal / تحويل / بطاقة")
-          .setRequired(false),
+          .setDescription("طريقة الدفع")
+          .setRequired(true)
+          .addChoices(
+            { name: "PayPal", value: "PayPal" },
+            { name: "تحويل بنكي — الراجحي", value: "تحويل بنكي — الراجحي" },
+            { name: "بطاقة Visa / Mastercard", value: "بطاقة Visa/Mastercard" },
+            { name: "Apple Pay", value: "Apple Pay" },
+            { name: "مدى", value: "مدى" },
+            { name: "يدوي / أخرى", value: "يدوي" },
+          ),
       )
       .toJSON(),
     new SlashCommandBuilder()

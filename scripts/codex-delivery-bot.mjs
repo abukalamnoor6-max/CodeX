@@ -508,16 +508,20 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const orderId = String(
         interaction.options.getString("order_id", true),
       ).trim();
-      const product =
-        interaction.options.getString("product")?.trim() || "طلب يدوي";
-      const amount = interaction.options.getString("amount")?.trim() || "—";
-      const currencyRaw =
-        interaction.options.getString("currency")?.trim().toUpperCase() ||
-        "USD";
-      const currencyLabel =
-        currencyRaw === "SAR" || currencyRaw === "ر.س" ? "ر.س" : currencyRaw;
-      const payment =
-        interaction.options.getString("payment")?.trim() || "يدوي";
+      const product = interaction.options.getString("product", true);
+      const amountRaw = interaction.options.getString("amount", true);
+      const payment = interaction.options.getString("payment", true);
+
+      let amountLabel = amountRaw;
+      let currencyLabel = "ر.س";
+      if (amountRaw.includes("|")) {
+        const [a, c] = amountRaw.split("|");
+        amountLabel = a;
+        currencyLabel = c || "USD";
+      } else if (amountRaw === "—") {
+        amountLabel = "—";
+        currencyLabel = "";
+      }
 
       const invoiceNo = orderId.toUpperCase().startsWith("CX-")
         ? orderId
@@ -526,7 +530,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const result = await sendPaidInvoice({
         invoiceNo,
         productName: product,
-        amountLabel: amount,
+        amountLabel,
         currencyLabel,
         email: "—",
         customerName: user.globalName || user.username,
