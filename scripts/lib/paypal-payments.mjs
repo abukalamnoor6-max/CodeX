@@ -176,9 +176,10 @@ export function createPayPalPayments({
         },
       ],
       application_context: {
-        brand_name: "𝐂𝐨𝐝𝐞𝐗",
+        brand_name: "CodeX",
         shipping_preference: "NO_SHIPPING",
         user_action: "PAY_NOW",
+        landing_page: "LOGIN",
         return_url: `${base}/pay/success?${successQs.toString()}`,
         cancel_url: `${base}/pay/cancel?${cancelQs.toString()}`,
       },

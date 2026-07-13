@@ -19,6 +19,26 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const GUARD_PUBLIC = path.resolve(__dirname, "../../public/guard");
 
+/** Short-lived checkout meta so mobile PayPal returns can rebuild the success page */
+const pendingPayMeta = new Map();
+function rememberPayMeta(orderId, meta) {
+  const id = String(orderId || "").trim();
+  if (!id) return;
+  pendingPayMeta.set(id, { ...meta, t: Date.now() });
+  if (pendingPayMeta.size > 500) {
+    const cutoff = Date.now() - 6 * 60 * 60 * 1000;
+    for (const [k, v] of pendingPayMeta) {
+      if (!v?.t || v.t < cutoff) pendingPayMeta.delete(k);
+    }
+  }
+}
+function takePayMeta(orderId) {
+  const id = String(orderId || "").trim();
+  if (!id) return null;
+  const hit = pendingPayMeta.get(id) || null;
+  return hit;
+}
+
 export function createPanelApp({
   client,
   store,
@@ -126,6 +146,12 @@ export function createPanelApp({
         discordId,
         discordUser,
         lang,
+      });
+      rememberPayMeta(order.id, {
+        amount: Number(amount).toFixed(2),
+        name: String(name || "𝐂𝐨𝐝𝐞𝐗 — خدمة"),
+        user: String(discordUser || "").replace(/^@+/, ""),
+        lang: String(lang || "ar").toLowerCase() === "en" ? "en" : "ar",
       });
       res.json({ ok: true, id: order.id, url: order.url, status: order.status });
     } catch (e) {
@@ -498,6 +524,8 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
 .row strong{font-size:1.05rem}
 .sub{margin:0 0 .55rem;color:#555;font-size:.9rem}
 #paypal-buttons{min-height:140px;margin-top:.6rem}
+.pay-go{display:none;width:100%;border:0;border-radius:12px;padding:1rem 1rem;margin-top:.6rem;background:#0070ba;color:#fff;font-weight:700;font-size:1.05rem;cursor:pointer}
+.pay-go:disabled{opacity:.7;cursor:wait}
 .msg{margin-top:.9rem;color:#b91c1c;font-size:.88rem;display:none}
 .foot{margin-top:1rem;text-align:center;color:#888;font-size:.78rem}
 </style>
@@ -517,6 +545,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     <p class="sub"><span data-i18n="user"></span> @${safeUser}</p>
     <p class="sub" data-i18n="payOpts"></p>
     <div id="paypal-buttons"></div>
+    <button type="button" class="pay-go" id="payGo" data-i18n="payGo"></button>
     <p class="msg" id="err"></p>
   </div>
   <p class="foot" data-i18n="foot"></p>
@@ -529,6 +558,8 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
   var discordUser = ${JSON.stringify(String(discordUser || "").replace(/^@+/, ""))};
   var discordId = ${JSON.stringify(String(discordId || ""))};
   var err = document.getElementById('err');
+  var payGo = document.getElementById('payGo');
+  var buttonsEl = document.getElementById('paypal-buttons');
   var I18N = {
     ar: {
       title: "موجز الطلب",
@@ -536,8 +567,10 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       user: "اليوزر:",
       id: "كوبي يوزر:",
       payOpts: "خيارات الدفع الإلكتروني السريع",
+      payGo: "ادفع الآن عبر PayPal",
+      paying: "جاري التحويل لـ PayPal...",
       foot: "مدعوم من PayPal · 𝐂𝐨𝐝𝐞𝐗",
-      mobileTip: "من الجوال: افتح الرابط في Safari أو Chrome (مو داخل دسكورد) عشان ترجع لصفحة النجاح.",
+      mobileTip: "من الجوال يفتح PayPal بصفحة كاملة، وبعد الدفع يرجعك تلقائي لصفحة النجاح.",
       fail: "فشل الدفع",
       createFail: "تعذر إنشاء الطلب",
       captureFail: "تعذر تأكيد الدفع",
@@ -550,8 +583,10 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       user: "Username:",
       id: "Copy User ID:",
       payOpts: "Express checkout options",
+      payGo: "Pay now with PayPal",
+      paying: "Redirecting to PayPal...",
       foot: "Powered by PayPal · 𝐂𝐨𝐝𝐞𝐗",
-      mobileTip: "On mobile: open this link in Safari/Chrome (not inside Discord) so you return to the success page.",
+      mobileTip: "On mobile, PayPal opens full-page and returns you to the success screen after payment.",
       fail: "Payment failed",
       createFail: "Could not create the order",
       captureFail: "Could not confirm payment",
@@ -595,17 +630,20 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     }));
   } catch (e) {}
 
+  function createOrderPayload(){
+    return {
+      amount: Number(amount),
+      name: name,
+      discordUser: discordUser,
+      discordId: discordId,
+      lang: lang
+    };
+  }
   function createOrder(){
     return fetch('/paypal/order', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        amount: Number(amount),
-        name: name,
-        discordUser: discordUser,
-        discordId: discordId,
-        lang: lang
-      })
+      body: JSON.stringify(createOrderPayload())
     }).then(function(r){ return r.json().then(function(j){ if(!r.ok||!j.id) throw new Error(j.error||t().createFail); return j.id; }); });
   }
   function onApprove(data, actions){
@@ -618,7 +656,6 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
         }
       }
     }
-    // Prefer client capture when available (desktop); always redirect after
     var capturePromise =
       actions && actions.order && typeof actions.order.capture === 'function'
         ? actions.order.capture().catch(function(){
@@ -635,25 +672,56 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
             body: JSON.stringify({ orderID: orderId }),
             keepalive: true
           });
-    // Hard timeout so mobile never stays stuck on checkout
-    setTimeout(go, 1200);
+    setTimeout(go, 800);
     return Promise.resolve(capturePromise).then(go, go);
   }
   function onError(e){ showErr((e&&e.message)||t().errPay); }
   function onCancel(){ showErr(t().cancel); }
 
-  // PayPal card/redirect sometimes returns here with ?token=&PayerID=
+  // Any PayPal return that lands on /pay with a token → success
   try {
     var params = new URLSearchParams(location.search);
     var retToken = params.get('token') || params.get('orderID');
-    var payer = params.get('PayerID') || params.get('payerId');
-    if (retToken && payer) {
+    if (retToken) {
       window.location.replace(successUrl(retToken));
       return;
     }
   } catch (e) {}
 
-  if (paypal.Buttons) {
+  var ua = navigator.userAgent || '';
+  var isMobile = /Android|iPhone|iPad|iPod|Mobile|Discord/i.test(ua) ||
+    (window.matchMedia && window.matchMedia('(max-width: 900px)').matches) ||
+    (('ontouchstart' in window) && Math.min(screen.width, screen.height) < 900);
+
+  if (isMobile) {
+    if (buttonsEl) buttonsEl.style.display = 'none';
+    payGo.style.display = 'block';
+    payGo.addEventListener('click', function(){
+      payGo.disabled = true;
+      payGo.textContent = t().paying;
+      fetch('/paypal/order', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(createOrderPayload())
+      }).then(function(r){
+        return r.json().then(function(j){
+          if (!r.ok || !j.url) throw new Error((j && j.error) || t().createFail);
+          try { sessionStorage.setItem('codex_pay_meta', JSON.stringify({
+            amount: amount, name: name, user: discordUser, lang: lang, orderId: j.id
+          })); } catch (e) {}
+          // Full-page redirect — return_url brings buyer to /pay/success
+          window.location.href = j.url;
+        });
+      }).catch(function(e){
+        payGo.disabled = false;
+        payGo.textContent = t().payGo;
+        showErr((e && e.message) || t().errPay);
+      });
+    });
+    return;
+  }
+
+  if (window.paypal && paypal.Buttons) {
     paypal.Buttons({
       style: { layout:'vertical', color:'gold', shape:'rect', label:'paypal', height:48 },
       createOrder: createOrder,
@@ -770,18 +838,21 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     try {
       // PayPal full-page return after card/wallet approve
       const retToken = String(req.query.token || req.query.orderID || "").trim();
-      const payerId = String(
-        req.query.PayerID || req.query.payerId || "",
-      ).trim();
-      if (retToken && payerId) {
+      if (retToken) {
+        const saved = takePayMeta(retToken) || {};
         const q = new URLSearchParams({
           token: retToken,
           lang:
-            String(req.query.lang || "").toLowerCase() === "en" ? "en" : "ar",
+            String(req.query.lang || saved.lang || "").toLowerCase() === "en"
+              ? "en"
+              : "ar",
         });
-        if (req.query.amount) q.set("amount", String(req.query.amount));
-        if (req.query.name) q.set("name", String(req.query.name));
-        if (req.query.user) q.set("user", String(req.query.user));
+        const amount = req.query.amount || saved.amount;
+        const name = req.query.name || saved.name;
+        const user = req.query.user || saved.user;
+        if (amount) q.set("amount", String(amount));
+        if (name) q.set("name", String(name));
+        if (user) q.set("user", String(user));
         return res.redirect(302, `/pay/success?${q.toString()}`);
       }
       if (!paypalPayments) {
@@ -947,19 +1018,34 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
 
   app.get("/pay/success", async (req, res) => {
     const token = String(req.query.token || req.query.orderID || "").trim();
+    const saved = token ? takePayMeta(token) : null;
     // Settle capture if PayPal returned an order token (card/redirect flows)
+    let fromOrder = null;
     if (token && paypalPayments) {
       try {
         await paypalPayments.captureOrder(token);
       } catch (e) {
         console.warn("pay/success capture:", e.message || e);
       }
+      try {
+        const order = await paypalPayments.getOrder(token);
+        const custom = paypalPayments.decodeCustomId?.(
+          order?.purchase_units?.[0]?.custom_id || "",
+        );
+        fromOrder = {
+          amount: order?.purchase_units?.[0]?.amount?.value || "",
+          name: custom?.productName || "",
+          user: custom?.discordUser || "",
+        };
+      } catch (e) {
+        console.warn("pay/success getOrder:", e.message || e);
+      }
     }
 
-    const lang = String(req.query.lang || "").toLowerCase() === "en" ? "en" : "ar";
-    const amount = String(req.query.amount || "").trim();
-    const name = String(req.query.name || "").trim();
-    const user = String(req.query.user || req.query.discord || "")
+    let lang = String(req.query.lang || saved?.lang || "").toLowerCase() === "en" ? "en" : "ar";
+    let amount = String(req.query.amount || saved?.amount || fromOrder?.amount || "").trim();
+    let name = String(req.query.name || saved?.name || fromOrder?.name || "").trim();
+    let user = String(req.query.user || req.query.discord || saved?.user || fromOrder?.user || "")
       .trim()
       .replace(/^@+/, "");
     const amountLabel = amount
