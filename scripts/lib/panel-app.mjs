@@ -206,12 +206,9 @@ export function createPanelApp({
         status === "COMPLETED" ||
         status === "APPROVED" ||
         Boolean(captured);
+      // Don't block status response on capture — success page settles it
       if (paid && status === "APPROVED") {
-        try {
-          await paypalPayments.captureOrder(orderId);
-        } catch {
-          // webhook / already captured
-        }
+        paypalPayments.captureOrder(orderId).catch(() => {});
       }
       const saved = takePayMeta(orderId) || {};
       let custom = {};
@@ -670,6 +667,11 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
   apply(lang);
 
   function showErr(msg){ err.style.display='block'; err.textContent=msg||t().fail; }
+  function hideOverlay(){ overlay.classList.remove('show'); }
+  function showOverlay(){
+    overlay.textContent = t().confirming;
+    overlay.classList.add('show');
+  }
   function successUrl(orderId, meta){
     var m = meta || {};
     var q = new URLSearchParams({
@@ -679,7 +681,6 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       lang: m.lang || lang
     });
     if (orderId) q.set('token', orderId);
-    // Absolute URL — critical for mobile WebViews / PayPal returns
     return location.origin + '/pay/success?' + q.toString();
   }
   function savePending(orderId){
@@ -698,35 +699,53 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
   }
   function goSuccess(orderId, meta){
     clearPending();
+    hideOverlay();
     var url = successUrl(orderId, meta);
-    try { window.top.location.replace(url); } catch (e1) {
-      try { window.location.replace(url); } catch (e2) { window.location.href = url; }
+    // Multiple strategies — mobile WebViews often block one of them
+    setTimeout(function(){ hideOverlay(); }, 400);
+    try { window.location.assign(url); return; } catch (e0) {}
+    try { window.location.href = url; return; } catch (e1) {}
+    try { window.top.location.href = url; } catch (e2) {
+      try { window.location.replace(url); } catch (e3) {}
     }
+  }
+  function fetchStatus(id){
+    var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var timer = setTimeout(function(){ try { ctrl && ctrl.abort(); } catch (e) {} }, 8000);
+    return fetch('/paypal/status?id=' + encodeURIComponent(id), {
+      cache: 'no-store',
+      signal: ctrl ? ctrl.signal : undefined
+    }).then(function(r){
+      clearTimeout(timer);
+      return r.json().catch(function(){ return {}; });
+    }).catch(function(){
+      clearTimeout(timer);
+      return { ok: false, paid: false };
+    });
   }
   function checkPaid(orderId, opts){
     var id = orderId || pendingId();
-    if (!id) return Promise.resolve(false);
-    if (opts && opts.overlay) {
-      overlay.textContent = t().confirming;
-      overlay.classList.add('show');
+    if (!id) {
+      hideOverlay();
+      return Promise.resolve(false);
     }
-    return fetch('/paypal/status?id=' + encodeURIComponent(id), { cache: 'no-store' })
-      .then(function(r){ return r.json().catch(function(){ return {}; }); })
-      .then(function(j){
-        if (j && j.paid) {
-          goSuccess(id, j);
-          return true;
-        }
-        overlay.classList.remove('show');
-        if (opts && opts.showResume) resumeBtn.classList.add('show');
-        if (opts && opts.errorIfNot) showErr(t().notPaidYet);
-        return false;
-      })
-      .catch(function(){
-        overlay.classList.remove('show');
-        if (opts && opts.showResume) resumeBtn.classList.add('show');
-        return false;
-      });
+    if (opts && opts.overlay) showOverlay();
+    // Hard stop so overlay can never hang forever
+    var stuck = setTimeout(function(){
+      hideOverlay();
+      if (opts && opts.showResume) resumeBtn.classList.add('show');
+    }, 9000);
+    return fetchStatus(id).then(function(j){
+      clearTimeout(stuck);
+      if (j && j.paid) {
+        goSuccess(id, j);
+        return true;
+      }
+      hideOverlay();
+      if (opts && opts.showResume) resumeBtn.classList.add('show');
+      if (opts && opts.errorIfNot) showErr(t().notPaidYet);
+      return false;
+    });
   }
 
   try {
@@ -759,30 +778,32 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
   function onApprove(data, actions){
     var orderId = (data && data.orderID) || pendingId() || '';
     savePending(orderId);
-    overlay.textContent = t().confirming;
-    overlay.classList.add('show');
-    function go(){ goSuccess(orderId); }
-    var capturePromise =
-      actions && actions.order && typeof actions.order.capture === 'function'
-        ? actions.order.capture().catch(function(){
-            return fetch('/paypal/capture', {
-              method:'POST',
-              headers:{'Content-Type':'application/json'},
-              body: JSON.stringify({ orderID: orderId }),
-              keepalive: true
-            });
-          })
-        : fetch('/paypal/capture', {
+    showOverlay();
+    // Don't wait on capture — go to success immediately on mobile
+    setTimeout(function(){ goSuccess(orderId); }, 300);
+    try {
+      if (actions && actions.order && typeof actions.order.capture === 'function') {
+        actions.order.capture().catch(function(){
+          fetch('/paypal/capture', {
             method:'POST',
             headers:{'Content-Type':'application/json'},
             body: JSON.stringify({ orderID: orderId }),
             keepalive: true
-          });
-    setTimeout(go, 600);
-    return Promise.resolve(capturePromise).then(go, go);
+          }).catch(function(){});
+        });
+      } else {
+        fetch('/paypal/capture', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ orderID: orderId }),
+          keepalive: true
+        }).catch(function(){});
+      }
+    } catch (e) {}
+    return Promise.resolve();
   }
-  function onError(e){ overlay.classList.remove('show'); showErr((e&&e.message)||t().errPay); }
-  function onCancel(){ overlay.classList.remove('show'); showErr(t().cancel); }
+  function onError(e){ hideOverlay(); showErr((e&&e.message)||t().errPay); }
+  function onCancel(){ hideOverlay(); showErr(t().cancel); }
 
   // PayPal return with token in URL
   try {
@@ -795,18 +816,18 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     }
   } catch (e) {}
 
-  // If buyer already paid and got bounced back to checkout, auto-detect
+  // Silent check if a previous attempt may already be paid (no stuck overlay)
   if (pendingId()) {
     resumeBtn.classList.add('show');
-    checkPaid(pendingId(), { overlay: true, showResume: true });
+    checkPaid(pendingId(), { overlay: false, showResume: true });
   }
   document.addEventListener('visibilitychange', function(){
     if (document.visibilityState === 'visible' && pendingId()) {
-      checkPaid(pendingId(), { overlay: true, showResume: true });
+      checkPaid(pendingId(), { overlay: false, showResume: true });
     }
   });
   window.addEventListener('pageshow', function(){
-    if (pendingId()) checkPaid(pendingId(), { overlay: true, showResume: true });
+    if (pendingId()) checkPaid(pendingId(), { overlay: false, showResume: true });
   });
   resumeBtn.addEventListener('click', function(){
     checkPaid(pendingId(), { overlay: true, showResume: true, errorIfNot: true });
