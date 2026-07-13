@@ -37,6 +37,11 @@ import {
 } from "./lib/broadcast-ui.mjs";
 import { createPanelApp } from "./lib/panel-app.mjs";
 import { createPayPalPayments } from "./lib/paypal-payments.mjs";
+import {
+  amountForProduct,
+  filterAmountChoices,
+  filterProductChoices,
+} from "./lib/order-catalog.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -500,6 +505,26 @@ const ORDERS_CHANNEL_ID =
   process.env.DISCORD_ORDERS_CHANNEL_ID || "1524971495921684601";
 
 client.on(Events.InteractionCreate, async (interaction) => {
+  // /order autocomplete — كل المنتجات والأسعار
+  if (
+    interaction.isAutocomplete() &&
+    interaction.commandName === "order"
+  ) {
+    try {
+      const focused = interaction.options.getFocused(true);
+      if (focused.name === "product") {
+        await interaction.respond(filterProductChoices(focused.value));
+      } else if (focused.name === "amount") {
+        await interaction.respond(filterAmountChoices(focused.value));
+      } else {
+        await interaction.respond([]);
+      }
+    } catch (e) {
+      console.warn("/order autocomplete failed", e.message);
+    }
+    return;
+  }
+
   // /order — فاتورة يدوية في روم الطلبات
   if (interaction.isChatInputCommand() && interaction.commandName === "order") {
     try {
@@ -509,8 +534,17 @@ client.on(Events.InteractionCreate, async (interaction) => {
         interaction.options.getString("order_id", true),
       ).trim();
       const product = interaction.options.getString("product", true);
-      const amountRaw = interaction.options.getString("amount", true);
+      let amountRaw = interaction.options.getString("amount", true);
       const payment = interaction.options.getString("payment", true);
+
+      // لو المبلغ فاضي/غلط نكمّل من سعر المنتج في الكتالوج
+      const catalogAmt = amountForProduct(product);
+      if (
+        catalogAmt != null &&
+        (!amountRaw || amountRaw === "—" || amountRaw === "auto")
+      ) {
+        amountRaw = String(catalogAmt);
+      }
 
       let amountLabel = amountRaw;
       let currencyLabel = "ر.س";
