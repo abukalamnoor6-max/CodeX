@@ -524,8 +524,6 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
 .row strong{font-size:1.05rem}
 .sub{margin:0 0 .55rem;color:#555;font-size:.9rem}
 #paypal-buttons{min-height:140px;margin-top:.6rem}
-.pay-go{display:none;width:100%;border:0;border-radius:12px;padding:1rem 1rem;margin-top:.6rem;background:#0070ba;color:#fff;font-weight:700;font-size:1.05rem;cursor:pointer}
-.pay-go:disabled{opacity:.7;cursor:wait}
 .msg{margin-top:.9rem;color:#b91c1c;font-size:.88rem;display:none}
 .foot{margin-top:1rem;text-align:center;color:#888;font-size:.78rem}
 </style>
@@ -545,11 +543,9 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     <p class="sub"><span data-i18n="user"></span> @${safeUser}</p>
     <p class="sub" data-i18n="payOpts"></p>
     <div id="paypal-buttons"></div>
-    <button type="button" class="pay-go" id="payGo" data-i18n="payGo"></button>
     <p class="msg" id="err"></p>
   </div>
   <p class="foot" data-i18n="foot"></p>
-  <p class="foot" style="margin-top:.35rem;font-size:.72rem" data-i18n="mobileTip"></p>
 </div>
 <script>
 (function(){
@@ -558,8 +554,6 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
   var discordUser = ${JSON.stringify(String(discordUser || "").replace(/^@+/, ""))};
   var discordId = ${JSON.stringify(String(discordId || ""))};
   var err = document.getElementById('err');
-  var payGo = document.getElementById('payGo');
-  var buttonsEl = document.getElementById('paypal-buttons');
   var I18N = {
     ar: {
       title: "موجز الطلب",
@@ -567,10 +561,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       user: "اليوزر:",
       id: "كوبي يوزر:",
       payOpts: "خيارات الدفع الإلكتروني السريع",
-      payGo: "ادفع الآن عبر PayPal",
-      paying: "جاري التحويل لـ PayPal...",
       foot: "مدعوم من PayPal · 𝐂𝐨𝐝𝐞𝐗",
-      mobileTip: "من الجوال يفتح PayPal بصفحة كاملة، وبعد الدفع يرجعك تلقائي لصفحة النجاح.",
       fail: "فشل الدفع",
       createFail: "تعذر إنشاء الطلب",
       captureFail: "تعذر تأكيد الدفع",
@@ -583,10 +574,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
       user: "Username:",
       id: "Copy User ID:",
       payOpts: "Express checkout options",
-      payGo: "Pay now with PayPal",
-      paying: "Redirecting to PayPal...",
       foot: "Powered by PayPal · 𝐂𝐨𝐝𝐞𝐗",
-      mobileTip: "On mobile, PayPal opens full-page and returns you to the success screen after payment.",
       fail: "Payment failed",
       createFail: "Could not create the order",
       captureFail: "Could not confirm payment",
@@ -688,39 +676,7 @@ h1{margin:0 0 1rem;font-size:1.15rem;font-weight:700}
     }
   } catch (e) {}
 
-  var ua = navigator.userAgent || '';
-  var isMobile = /Android|iPhone|iPad|iPod|Mobile|Discord/i.test(ua) ||
-    (window.matchMedia && window.matchMedia('(max-width: 900px)').matches) ||
-    (('ontouchstart' in window) && Math.min(screen.width, screen.height) < 900);
-
-  if (isMobile) {
-    if (buttonsEl) buttonsEl.style.display = 'none';
-    payGo.style.display = 'block';
-    payGo.addEventListener('click', function(){
-      payGo.disabled = true;
-      payGo.textContent = t().paying;
-      fetch('/paypal/order', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify(createOrderPayload())
-      }).then(function(r){
-        return r.json().then(function(j){
-          if (!r.ok || !j.url) throw new Error((j && j.error) || t().createFail);
-          try { sessionStorage.setItem('codex_pay_meta', JSON.stringify({
-            amount: amount, name: name, user: discordUser, lang: lang, orderId: j.id
-          })); } catch (e) {}
-          // Full-page redirect — return_url brings buyer to /pay/success
-          window.location.href = j.url;
-        });
-      }).catch(function(e){
-        payGo.disabled = false;
-        payGo.textContent = t().payGo;
-        showErr((e && e.message) || t().errPay);
-      });
-    });
-    return;
-  }
-
+  // Same Smart Buttons on mobile + desktop (PayPal + Debit/Credit Card)
   if (window.paypal && paypal.Buttons) {
     paypal.Buttons({
       style: { layout:'vertical', color:'gold', shape:'rect', label:'paypal', height:48 },
