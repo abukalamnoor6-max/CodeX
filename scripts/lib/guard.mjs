@@ -8,10 +8,11 @@ import {
   PermissionsBitField,
   ChannelType,
 } from "discord.js";
+import { findProfanity } from "./bad-words.mjs";
 
 export const LOG_CHANNELS = {
   general: "1524972399240679475", // xx
-  tickets: "1524972402205921420", // ticket-logs
+  tickets: "1526457099071000686", // ticket-logs
   permissions: "1524972405381136405", // Permissions
   ban: "1524972409088905296", // Ban · Unban
   rooms: "1524972412121120950", // Rooms
@@ -858,6 +859,35 @@ export function attachGuard(client, options = {}) {
 
     const uid = message.author.id;
     const content = message.content || "";
+
+    // —— كلام بذيء / سب / إيموجي ممنوع ——
+    const hit = findProfanity(content);
+    if (hit) {
+      await message.delete().catch(() => {});
+      const isEmoji = String(hit).startsWith("emoji:");
+      await punish(
+        message.member,
+        isEmoji ? "إيموجي ممنوع" : "كلام بذيء / إساءة",
+        {
+          timeoutMs: 15 * 60_000,
+        },
+      );
+      await sendLog(
+        client,
+        "chat",
+        baseEmbed(0xed4245, isEmoji ? "🚫 إيموجي محذوف" : "🤬 كلام بذيء محذوف").setDescription(
+          [
+            `الشخص: <@${uid}>`,
+            `الروم: <#${message.channelId}>`,
+            `المطابقة: \`${hit}\``,
+            `\`${clip(content, 220)}\``,
+            "",
+            `\`${formatLogTime()}\``,
+          ].join("\n"),
+        ),
+      );
+      return;
+    }
 
     // Flood
     const flood = takeBucket(msgBuckets, uid, 6_000);
